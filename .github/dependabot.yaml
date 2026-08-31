@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # the pinned ansible-core in install/requirements.txt
+  - package-ecosystem: "pip"
+    directory: "/install"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

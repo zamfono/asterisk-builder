@@ -1,0 +1,1025 @@
+Description: split Asterisk modules into Zamfono functional packages
+ Replaces Debian's single asterisk-modules binary package with one binary
+ package per functional group, and turns asterisk-modules into an
+ Architecture: all meta-package depending on every group at
+ ${binary:Version}. The asterisk package depends on asterisk-modules-core
+ alone. The internal test modules are not built or shipped; TEST_FRAMEWORK
+ itself stays enabled because AST_BUILDOPT_SUM, which debian/rules checks
+ against SAVED_ABI_HASH, covers it.
+ .
+ The Breaks/Replaces entries naming Debian's former module packages
+ (asterisk-mp3, asterisk-dahdi, ...) are deliberately unversioned: a
+ substvar version bound against a package built from a different source
+ package, e.g. asterisk-mp3 (<< ${source:Version}), raises lintian's
+ version-substvar-for-external-package error, which the lintian gate
+ rejects.
+Author: Zamfono Packaging <packages@zamfono.com>
+Forwarded: not-needed
+---
+diff -Naur a/debian/asterisk-dahdi.install b/debian/asterisk-dahdi.install
+--- a/debian/asterisk-dahdi.install	2026-06-26 16:13:37
++++ b/debian/asterisk-dahdi.install	1970-01-01 01:00:00
+@@ -1,4 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_flash.so
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_dahdi.so
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/codec_dahdi.so
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_timing_dahdi.so
+diff -Naur a/debian/asterisk-mobile.install b/debian/asterisk-mobile.install
+--- a/debian/asterisk-mobile.install	2026-06-26 16:13:37
++++ b/debian/asterisk-mobile.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_mobile.so
+diff -Naur a/debian/asterisk-modules-amr.install b/debian/asterisk-modules-amr.install
+--- a/debian/asterisk-modules-amr.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-amr.install	2026-08-29 03:19:24
+@@ -0,0 +1,2 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/codec_amr.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_format_attr_amr.so
+diff -Naur a/debian/asterisk-modules-ari.install b/debian/asterisk-modules-ari.install
+--- a/debian/asterisk-modules-ari.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-ari.install	2026-08-29 03:19:24
+@@ -0,0 +1,21 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_stasis.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_stasis_broadcast.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_applications.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_asterisk.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_bridges.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_channels.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_device_states.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_endpoints.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_events.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_model.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_playbacks.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_recordings.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_ari_sounds.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_answer.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_broadcast.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_device_state.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_playback.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_recording.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_stasis_snoop.so
+diff -Naur a/debian/asterisk-modules-calendar.install b/debian/asterisk-modules-calendar.install
+--- a/debian/asterisk-modules-calendar.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-calendar.install	2026-08-29 03:19:24
+@@ -0,0 +1,5 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_calendar.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_calendar_caldav.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_calendar_ews.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_calendar_exchange.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_calendar_icalendar.so
+diff -Naur a/debian/asterisk-modules-core.install b/debian/asterisk-modules-core.install
+--- a/debian/asterisk-modules-core.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-core.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk
+diff -Naur a/debian/asterisk-modules-core.lintian-overrides b/debian/asterisk-modules-core.lintian-overrides
+--- a/debian/asterisk-modules-core.lintian-overrides	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-core.lintian-overrides	2026-07-20 21:16:04
+@@ -0,0 +1,4 @@
++# Plugins
++shared-library-lacks-prerequisites [usr/lib/*/asterisk/modules/*]
++# res_curl.so calls into the Asterisk program that dlopens it, not libc.
++library-not-linked-against-libc [usr/lib/*/asterisk/modules/*]
+diff -Naur a/debian/asterisk-modules-dahdi.install b/debian/asterisk-modules-dahdi.install
+--- a/debian/asterisk-modules-dahdi.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-dahdi.install	2026-08-29 03:19:24
+@@ -0,0 +1,4 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_flash.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_dahdi.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/codec_dahdi.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_timing_dahdi.so
+diff -Naur a/debian/asterisk-modules-fax.install b/debian/asterisk-modules-fax.install
+--- a/debian/asterisk-modules-fax.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-fax.install	2026-08-29 03:19:24
+@@ -0,0 +1,2 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_fax.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_fax_spandsp.so
+diff -Naur a/debian/asterisk-modules-hep.install b/debian/asterisk-modules-hep.install
+--- a/debian/asterisk-modules-hep.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-hep.install	2026-08-29 03:19:24
+@@ -0,0 +1,3 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_hep.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_hep_pjsip.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_hep_rtcp.so
+diff -Naur a/debian/asterisk-modules-jack.install b/debian/asterisk-modules-jack.install
+--- a/debian/asterisk-modules-jack.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-jack.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_jack.so
+diff -Naur a/debian/asterisk-modules-ldap.install b/debian/asterisk-modules-ldap.install
+--- a/debian/asterisk-modules-ldap.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-ldap.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_ldap.so
+diff -Naur a/debian/asterisk-modules-lua.install b/debian/asterisk-modules-lua.install
+--- a/debian/asterisk-modules-lua.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-lua.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/pbx_lua.so
+diff -Naur a/debian/asterisk-modules-mobile.install b/debian/asterisk-modules-mobile.install
+--- a/debian/asterisk-modules-mobile.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-mobile.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_mobile.so
+diff -Naur a/debian/asterisk-modules-mp3.install b/debian/asterisk-modules-mp3.install
+--- a/debian/asterisk-modules-mp3.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-mp3.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/format_mp3.so
+diff -Naur a/debian/asterisk-modules-mysql.install b/debian/asterisk-modules-mysql.install
+--- a/debian/asterisk-modules-mysql.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-mysql.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_mysql.so
+diff -Naur a/debian/asterisk-modules-odbc.install b/debian/asterisk-modules-odbc.install
+--- a/debian/asterisk-modules-odbc.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-odbc.install	2026-08-29 03:19:24
+@@ -0,0 +1,7 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cdr_adaptive_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cdr_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cel_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/func_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_odbc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_odbc_transaction.so
+diff -Naur a/debian/asterisk-modules-ooh323.install b/debian/asterisk-modules-ooh323.install
+--- a/debian/asterisk-modules-ooh323.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-ooh323.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_ooh323.so
+diff -Naur a/debian/asterisk-modules-opus.install b/debian/asterisk-modules-opus.install
+--- a/debian/asterisk-modules-opus.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-opus.install	2026-08-29 03:19:24
+@@ -0,0 +1,3 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/codec_opus_open_source.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/format_ogg_opus_open_source.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_format_attr_opus.so
+diff -Naur a/debian/asterisk-modules-pjsip.install b/debian/asterisk-modules-pjsip.install
+--- a/debian/asterisk-modules-pjsip.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-pjsip.install	2026-08-29 03:19:24
+@@ -0,0 +1,53 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_pjsip.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/func_pjsip_aor.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/func_pjsip_contact.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/func_pjsip_endpoint.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjproject.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_acl.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_aoc.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_authenticator_digest.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_caller_id.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_config_wizard.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_dialog_info_body_generator.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_diversion.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_dlg_options.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_dtmf_info.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_empty_info.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_endpoint_identifier_anonymous.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_endpoint_identifier_ip.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_endpoint_identifier_user.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_exten_state.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_geolocation.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_header_funcs.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_history.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_logger.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_maintenance.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_messaging.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_mwi.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_mwi_body_generator.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_nat.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_notify.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_one_touch_record_info.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_outbound_authenticator_digest.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_outbound_publish.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_outbound_registration.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_path.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_phoneprov_provider.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_pidf_body_generator.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_pidf_digium_body_supplement.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_pidf_eyebeam_body_supplement.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_publish_asterisk.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_pubsub.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_refer.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_registrar.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_rfc3326.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_rfc3329.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_sdp_rtp.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_send_to_voicemail.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_session.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_sips_contact.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_stir_shaken.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_t38.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_transport_websocket.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_pjsip_xpidf_body_generator.so
+diff -Naur a/debian/asterisk-modules-postgresql.install b/debian/asterisk-modules-postgresql.install
+--- a/debian/asterisk-modules-postgresql.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-postgresql.install	2026-08-29 03:19:24
+@@ -0,0 +1,3 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cdr_pgsql.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cel_pgsql.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_pgsql.so
+diff -Naur a/debian/asterisk-modules-prometheus.install b/debian/asterisk-modules-prometheus.install
+--- a/debian/asterisk-modules-prometheus.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-prometheus.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_prometheus.so
+diff -Naur a/debian/asterisk-modules-radius.install b/debian/asterisk-modules-radius.install
+--- a/debian/asterisk-modules-radius.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-radius.install	2026-08-29 03:19:24
+@@ -0,0 +1,2 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cdr_radius.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cel_radius.so
+diff -Naur a/debian/asterisk-modules-snmp.install b/debian/asterisk-modules-snmp.install
+--- a/debian/asterisk-modules-snmp.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-snmp.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_snmp.so
+diff -Naur a/debian/asterisk-modules-sqlite3.install b/debian/asterisk-modules-sqlite3.install
+--- a/debian/asterisk-modules-sqlite3.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-sqlite3.install	2026-08-29 03:19:24
+@@ -0,0 +1,3 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cdr_sqlite3_custom.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/cel_sqlite3_custom.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_sqlite3.so
+diff -Naur a/debian/asterisk-modules-voicemail-odbc.install b/debian/asterisk-modules-voicemail-odbc.install
+--- a/debian/asterisk-modules-voicemail-odbc.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-voicemail-odbc.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_voicemail_odbc.so
+diff -Naur a/debian/asterisk-modules-voicemail.install b/debian/asterisk-modules-voicemail.install
+--- a/debian/asterisk-modules-voicemail.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-voicemail.install	2026-08-29 03:19:24
+@@ -0,0 +1 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/app_voicemail.so
+diff -Naur a/debian/asterisk-modules-xmpp.install b/debian/asterisk-modules-xmpp.install
+--- a/debian/asterisk-modules-xmpp.install	1970-01-01 01:00:00
++++ b/debian/asterisk-modules-xmpp.install	2026-08-29 03:19:24
+@@ -0,0 +1,2 @@
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_motif.so
++usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_xmpp.so
+diff -Naur a/debian/asterisk-modules.install b/debian/asterisk-modules.install
+--- a/debian/asterisk-modules.install	2026-06-26 16:13:37
++++ b/debian/asterisk-modules.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk
+diff -Naur a/debian/asterisk-modules.lintian-overrides b/debian/asterisk-modules.lintian-overrides
+--- a/debian/asterisk-modules.lintian-overrides	2026-07-20 21:16:04
++++ b/debian/asterisk-modules.lintian-overrides	1970-01-01 01:00:00
+@@ -1,2 +0,0 @@
+-# Plugins
+-shared-library-lacks-prerequisites [usr/lib/*/asterisk/modules/*]
+diff -Naur a/debian/asterisk-mp3.install b/debian/asterisk-mp3.install
+--- a/debian/asterisk-mp3.install	2026-06-26 16:13:37
++++ b/debian/asterisk-mp3.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/format_mp3.so
+diff -Naur a/debian/asterisk-mysql.install b/debian/asterisk-mysql.install
+--- a/debian/asterisk-mysql.install	2026-06-26 16:13:37
++++ b/debian/asterisk-mysql.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/res_config_mysql.so
+diff -Naur a/debian/asterisk-ooh323.install b/debian/asterisk-ooh323.install
+--- a/debian/asterisk-ooh323.install	2026-06-26 16:13:37
++++ b/debian/asterisk-ooh323.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/chan_ooh323.so
+diff -Naur a/debian/asterisk-tests.install b/debian/asterisk-tests.install
+--- a/debian/asterisk-tests.install	2026-06-26 16:13:37
++++ b/debian/asterisk-tests.install	1970-01-01 01:00:00
+@@ -1 +0,0 @@
+-usr/lib/${DEB_HOST_MULTIARCH}/asterisk/modules/test_*.so
+diff -Naur a/debian/asterisk-tests.lintian-overrides b/debian/asterisk-tests.lintian-overrides
+--- a/debian/asterisk-tests.lintian-overrides	2026-06-26 16:13:37
++++ b/debian/asterisk-tests.lintian-overrides	1970-01-01 01:00:00
+@@ -1,2 +0,0 @@
+-# Plugins
+-shared-library-lacks-prerequisites [usr/lib/*/asterisk/modules/*]
+diff -Naur a/debian/control b/debian/control
+--- a/debian/control	2026-06-26 16:14:12
++++ b/debian/control	2026-08-29 03:19:24
+@@ -87,7 +87,7 @@
+  adduser,
+  asterisk-config (= ${source:Version}) | asterisk-config-custom,
+  asterisk-core-sounds-en,
+- asterisk-modules (= ${binary:Version}),
++ asterisk-modules-core (= ${binary:Version}),
+  ${shlibs:Depends},
+ Provides:
+  asterisk-abi-${asterisk:ABI},
+@@ -95,11 +95,9 @@
+  asterisk-moh-opsound-gsm,
+  sox,
+ Suggests:
+- asterisk-dahdi,
+  asterisk-dev,
+  asterisk-doc,
+- asterisk-ooh323,
+- asterisk-opus,
++ asterisk-modules,
+ Description: Open Source Private Branch Exchange (PBX)
+  Asterisk is an Open Source PBX and telephony toolkit.
+  It is, in a sense, middleware
+@@ -130,126 +128,480 @@
+  and most channel drivers and applications.
+ 
+ Package: asterisk-modules
++Architecture: all
++Depends:
++ asterisk-modules-core (= ${binary:Version}),
++ asterisk-modules-pjsip (= ${binary:Version}),
++ asterisk-modules-ari (= ${binary:Version}),
++ asterisk-modules-amr (= ${binary:Version}),
++ asterisk-modules-mp3 (= ${binary:Version}),
++ asterisk-modules-opus (= ${binary:Version}),
++ asterisk-modules-voicemail (= ${binary:Version}),
++ asterisk-modules-voicemail-odbc (= ${binary:Version}),
++ asterisk-modules-odbc (= ${binary:Version}),
++ asterisk-modules-postgresql (= ${binary:Version}),
++ asterisk-modules-mysql (= ${binary:Version}),
++ asterisk-modules-sqlite3 (= ${binary:Version}),
++ asterisk-modules-fax (= ${binary:Version}),
++ asterisk-modules-dahdi (= ${binary:Version}),
++ asterisk-modules-mobile (= ${binary:Version}),
++ asterisk-modules-ooh323 (= ${binary:Version}),
++ asterisk-modules-snmp (= ${binary:Version}),
++ asterisk-modules-xmpp (= ${binary:Version}),
++ asterisk-modules-ldap (= ${binary:Version}),
++ asterisk-modules-lua (= ${binary:Version}),
++ asterisk-modules-radius (= ${binary:Version}),
++ asterisk-modules-calendar (= ${binary:Version}),
++ asterisk-modules-jack (= ${binary:Version}),
++ asterisk-modules-hep (= ${binary:Version}),
++ asterisk-modules-prometheus (= ${binary:Version}),
++Section: libs
++Description: all loadable module groups for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This meta-package depends on every Asterisk module group
++ and contains no modules itself.
++ Install it only to get the complete module set;
++ the asterisk package itself needs asterisk-modules-core alone.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-core
+ Architecture: any
++Section: libs
+ Depends:
+  ${shlibs:Depends},
+ Replaces:
++ asterisk-modules,
++Description: core loadable modules for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the runtime baseline of Asterisk modules:
++ everything needed for normal operation
++ that pulls in no optional external software stack.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-pjsip
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: PJSIP channel driver and stack for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the PJSIP channel driver,
++ the res_pjsip module family and the PJPROJECT glue.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-ari
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: Asterisk REST Interface and Stasis application modules
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Asterisk REST Interface (ARI)
++ and the Stasis application modules it is built on.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-amr
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: AMR codec support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Adaptive Multi-Rate codec modules.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-mp3
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Replaces:
++ asterisk-mp3,
++Breaks:
++ asterisk-mp3,
++Description: MP3 playback support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the MP3 file format module,
++ which plays MP3-encoded files.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-opus
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Replaces:
+  asterisk-opus (<< 13.7+20171009-2+),
+- asterisk-voicemail (<< 1:18),
+- asterisk-voicemail-imapstorage (<< 1:18),
+- asterisk-voicemail-odbcstorage (<< 1:18),
+ Breaks:
+  asterisk-opus (<< 13.7+20171009-2+),
++Description: Opus codec and Ogg Opus format support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Opus codec
++ and the Ogg Opus file format modules.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-voicemail
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Replaces:
+  asterisk-voicemail (<< 1:18),
+- asterisk-voicemail-imapstorage (<< 1:18),
++Breaks:
++ asterisk-voicemail (<< 1:18),
++Description: voicemail support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the voicemail application
++ using plain file storage.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-voicemail-odbc
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++ asterisk-modules-odbc (= ${binary:Version}),
++Replaces:
+  asterisk-voicemail-odbcstorage (<< 1:18),
++Breaks:
++ asterisk-voicemail-odbcstorage (<< 1:18),
++Description: voicemail with ODBC storage for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the voicemail application
++ storing messages in an ODBC database.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-odbc
++Architecture: any
+ Section: libs
+-Description: loadable modules for the Asterisk PBX
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: ODBC database support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package includes most of the Asterisk loadable modules.
+- There is normally no need to explicitly install it.
++ This package contains the ODBC resource, configuration,
++ dialplan function, CDR and CEL backends.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-dahdi
+-Architecture: linux-any
++Package: asterisk-modules-postgresql
++Architecture: any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+- dahdi,
+  ${shlibs:Depends},
+-Breaks:
+- asterisk-modules (<< 1:11.6.0~dfsg-2),
+-Replaces:
+- asterisk-modules (<< 1:11.6.0~dfsg-2),
+-Description: DAHDI devices support for the Asterisk PBX
++ asterisk-modules-core (= ${binary:Version}),
++Description: PostgreSQL database support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package includes the DAHDI channel driver (chan_dahdi.so)
+- and a number of other Asterisk modules that require DAHDI support.
+- They will not be useful without kernel-level DAHDI support.
++ This package contains the PostgreSQL configuration,
++ CDR and CEL backends.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-ooh323
++Package: asterisk-modules-mysql
+ Architecture: any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+  ${shlibs:Depends},
+-Description: H.323 protocol support for the Asterisk PBX - ooH323c
++ asterisk-modules-core (= ${binary:Version}),
++Provides:
++ asterisk-mysql,
++Replaces:
++ asterisk-mysql,
++Conflicts:
++ asterisk-mysql,
++Description: MySQL database support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This channel driver (chan_ooh323c) provides support
+- for the H.323 protocol for Asterisk.
+- This is an independent implementation
+- that does not depend on OpenH323,
+- but may be less functional than the original chan_h323.
++ This package contains the MySQL realtime configuration backend.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-mp3
++Package: asterisk-modules-sqlite3
+ Architecture: any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+  ${shlibs:Depends},
+-Description: MP3 playback support for the Asterisk PBX
++ asterisk-modules-core (= ${binary:Version}),
++Description: SQLite3 database support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package provides support
+- for playing MP3-encoded files in Asterisk.
++ This package contains the SQLite3 configuration and CDR backends.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-mysql
++Package: asterisk-modules-fax
+ Architecture: any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+  ${shlibs:Depends},
+-Description: MySQL database protocol support for the Asterisk PBX
++ asterisk-modules-core (= ${binary:Version}),
++Description: fax support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package provides support for using a MySQL database
+- to store configuration, call detail records,
+- and also provides generic access to it from the dialplan.
++ This package contains the fax resource
++ and its SpanDSP backend.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-mobile
++Package: asterisk-modules-dahdi
+ Architecture: linux-any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+  ${shlibs:Depends},
+-Description: Bluetooth phone support for the Asterisk PBX
++ asterisk-modules-core (= ${binary:Version}),
++Provides:
++ asterisk-dahdi,
++Replaces:
++ asterisk-dahdi,
++Conflicts:
++ asterisk-dahdi,
++Description: DAHDI device support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package provides support
+- for connecting Bluetooth devices to the Asterisk PBX.
+- It allows you to:
+-   * Send and receive PSTN calls and SMS messages
+-     over a Bluetooth phone.
+-   * Use a Bluetooth handset as a local phone
+-     connected to your PBX.
++ This package contains the DAHDI channel driver
++ and the other modules that require DAHDI support.
++ They are not useful without kernel-level DAHDI support.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+-Package: asterisk-tests
++Package: asterisk-modules-mobile
+ Architecture: linux-any
++Section: libs
+ Depends:
+- asterisk (= ${binary:Version}),
+  ${shlibs:Depends},
+-Description: internal test modules of the Asterisk PBX
++ asterisk-modules-core (= ${binary:Version}),
++Provides:
++ asterisk-mobile,
++Replaces:
++ asterisk-mobile,
++Conflicts:
++ asterisk-mobile,
++Description: Bluetooth phone support for the Asterisk PBX
+  Asterisk is an Open Source PBX and telephony toolkit.
+  .
+- This package provides modules
+- that run various functionality tests.
+- You would normally not install this package
+- unless you test a build of Asterisk.
++ This package contains the Bluetooth channel driver,
++ which connects Bluetooth phones and handsets to the PBX.
+  .
+- For more information about the Asterisk PBX,
+- have a look at the Asterisk package.
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-ooh323
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Replaces:
++ asterisk-ooh323,
++Breaks:
++ asterisk-ooh323,
++Description: H.323 protocol support for the Asterisk PBX - ooH323c
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the ooH323c channel driver,
++ an independent H.323 implementation
++ that does not depend on OpenH323.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-snmp
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: SNMP agent support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the SNMP agent resource module.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-xmpp
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: XMPP support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the XMPP resource module
++ and the Motif (Jingle) channel driver.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-ldap
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: LDAP configuration backend for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the LDAP realtime configuration backend.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-lua
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: Lua dialplan support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Lua dialplan switch.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-radius
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: RADIUS accounting support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the RADIUS CDR and CEL backends.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-calendar
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: calendar integration for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the calendar resource
++ and its CalDAV, Exchange, EWS and iCalendar backends.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-jack
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: JACK audio support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the JACK Audio Connection Kit application.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-hep
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++ asterisk-modules-pjsip (= ${binary:Version}),
++Description: HEP capture agent support for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Homer Encapsulation Protocol resource
++ and its PJSIP and RTCP capture backends.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
++
++Package: asterisk-modules-prometheus
++Architecture: any
++Section: libs
++Depends:
++ ${shlibs:Depends},
++ asterisk-modules-core (= ${binary:Version}),
++Description: Prometheus metrics for the Asterisk PBX
++ Asterisk is an Open Source PBX and telephony toolkit.
++ .
++ This package contains the Prometheus metrics exporter.
++ .
++ This package is part of an unofficial Zamfono build for Debian 13.
++ It is not provided, supported, or endorsed
++ by the Debian Project or the Asterisk project.
+ 
+ Package: asterisk-doc
+ Architecture: all
+diff -Naur a/debian/rules b/debian/rules
+--- a/debian/rules	2026-06-26 16:13:37
++++ b/debian/rules	2026-08-29 03:19:24
+@@ -165,9 +165,13 @@
+ 
+ REMOVED_PROTO_CONFS = dundi unistim
+ REMOVED_PROTO_FILES = $(REMOVED_PROTO_CONFS:%=debian/tmp/etc/asterisk/%.conf)
+-SUBPACKS_EXTRA = ooh323 mysql mp3
++SUBPACKS_EXTRA = modules-pjsip modules-ari modules-amr modules-mp3 \
++  modules-ooh323 modules-opus modules-voicemail modules-voicemail-odbc \
++  modules-odbc modules-postgresql modules-mysql modules-sqlite3 \
++  modules-fax modules-snmp modules-xmpp modules-ldap modules-lua \
++  modules-radius modules-calendar modules-jack modules-hep modules-prometheus
+ ifeq (linux,$(DEB_BUILD_ARCH_OS))
+-SUBPACKS_EXTRA += dahdi mobile tests
++SUBPACKS_EXTRA += modules-dahdi modules-mobile
+ endif
+ SUBPACKS_EXTRA_DIRS = $(SUBPACKS_EXTRA:%=debian/asterisk-%)
+ SUBPACKS_EXTRA_DIRS_MOD = $(SUBPACKS_EXTRA_DIRS:%=%/usr/lib/$(DEB_HOST_MULTIARCH)/asterisk/modules)
+@@ -193,10 +197,12 @@
+ 	$(RM) -f debian/tmp/usr/sbin/stereorize
+ 	$(RM) -f debian/tmp/usr/sbin/hashtest*
+ 	$(RM) -f debian/tmp/usr/sbin/refcounter
++	$(RM) -f debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/asterisk/modules/test_*.so
++	$(RM) -f debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/asterisk/modules/res_stasis_test.so
+ 
+ execute_after_dh_install-arch:
+ 	extra_packs=$$(find $(SUBPACKS_EXTRA_DIRS_MOD) -name '*.so' -printf '%f\n');\
+-	  cd debian/asterisk-modules/usr/lib/$(DEB_HOST_MULTIARCH)/asterisk/modules \
++	  cd debian/asterisk-modules-core/usr/lib/$(DEB_HOST_MULTIARCH)/asterisk/modules \
+ 	  && rm -f $$extra_packs
+ 
+ override_dh_installdocs:
+diff -Naur a/debian/tests/asttestmods b/debian/tests/asttestmods
+--- a/debian/tests/asttestmods	2026-06-26 16:13:37
++++ b/debian/tests/asttestmods	1970-01-01 01:00:00
+@@ -1,70 +0,0 @@
+-#!/bin/sh
+-
+-base_dir="debian/tests/testmods"
+-asterisk="$base_dir/asterisk"
+-output_dir="$base_dir/output" # Writable by Asterisk
+-conf_dir="$output_dir/conf"
+-results_file="$PWD/$output_dir/results.txt"
+-multiarch=$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+-
+-# test_message: some tests still fail. See
+-#   https://issues.asterisk.org/jira/browse/ASTERISK-27172
+-disable_mods='
+-	test_message
+-	test_cel
+-'
+-
+-setup() {
+-	service asterisk stop
+-
+-	rm -rf "$output_dir"
+-	mkdir -p "$output_dir/lib" "$output_dir/logs" \
+-		"$output_dir/spool/voicemail/default/1234/INBOX"
+-	cp -a configs/samples "$output_dir/conf"
+-	for file in "$output_dir/conf/"*.conf.sample; do
+-		new_name=${file%.sample}
+-		mv "$file" "$new_name"
+-	done
+-	sed -i -e '/;enabled=/s/^;//' "$conf_dir/http.conf"
+-	cat <<EOF >>"$conf_dir/sorcery.conf"
+-[res_pjsip_pubsub]
+-resource_list=memory
+-EOF
+-	for mod in $disable_mods; do
+-		sed -i -e "/^\[modules\]/anoload => $mod.so" "$conf_dir/modules.conf"
+-	done
+-	chown -R asterisk "$output_dir"
+-	$asterisk -U asterisk
+-	sleep 1
+-	$asterisk -rx 'core waitfullybooted'
+-}
+-
+-run() {
+-	$asterisk -rx 'test execute all' 2>&1
+-	$asterisk -rx "test generate results xml $results_file"
+-	$asterisk -rx 'module show like test_' | awk '/Running/ {print $1}' \
+-		| sort  > "$output_dir/mods_loaded"
+-	ls /usr/lib/$multiarch/asterisk/modules/ | sort | grep ^test_ > "$output_dir/mods_all"
+-	if ! cmp -s "$output_dir/mods_loaded" "$output_dir/mods_all"; then
+-		echo "Some test modules were not loaded:"
+-		diff "$output_dir/mods_loaded" "$output_dir/mods_all"
+-		echo "Manually disabled: $disable_mods"
+-	fi
+-	failed=`xmllint --xpath 'string(//testsuite/@errors)' $results_file`
+-	test_in_source=`grep AST_TEST_REGISTER tests/test_*.c | wc -l`
+-	if [ "$failed" != '0' ]; then
+-		echo >&2 "Some tests failed:"
+-		echo >&2 "$results_file"
+-		$asterisk -rx "test show results failed" >&2
+-	fi
+-}
+-
+-teardown() {
+-	$asterisk -rx 'core stop now'
+-	service asterisk stop
+-}
+-
+-setup
+-run
+-teardown
+-
+diff -Naur a/debian/tests/control b/debian/tests/control
+--- a/debian/tests/control	2026-06-26 16:13:37
++++ b/debian/tests/control	2026-08-29 03:19:24
+@@ -1,11 +1,3 @@
+-Tests: asttestmods
+-Restrictions: needs-root, isolation-container, allow-stderr
+-Depends:
+- asterisk,
+- asterisk-core-sounds-en-gsm,
+- asterisk-tests,
+- libxml2-utils,
+-
+ Tests: amr
+ Restrictions: needs-root
+ Depends:
+diff -Naur a/debian/tests/testmods/asterisk b/debian/tests/testmods/asterisk
+--- a/debian/tests/testmods/asterisk	2026-06-26 16:13:37
++++ b/debian/tests/testmods/asterisk	1970-01-01 01:00:00
+@@ -1,18 +0,0 @@
+-#!/bin/sh
+-
+-# Run Asterisk using the local configuration directory:
+-
+-my_dir=$(realpath `dirname $0`)
+-dir="$my_dir/output"
+-ast_conf="$dir/asterisk.conf"
+-if [ ! -r "$ast_conf" ]; then
+-	(
+-		echo "; File generated by $0"
+-		echo "[directories]"
+-		echo "astetcdir     => $dir/conf"
+-		echo "astlogdir     => $dir/logs"
+-		echo "astlibdir     => $dir/lib"
+-		echo "astspooldir   => $dir/spool"
+-	) > "$ast_conf"
+-fi
+-exec /usr/sbin/asterisk -U asterisk -C "$ast_conf" "$@"
+diff -Naur a/debian/source/lintian-overrides b/debian/source/lintian-overrides
+--- a/debian/source/lintian-overrides	2026-06-26 16:13:37
++++ b/debian/source/lintian-overrides	2026-08-29 05:00:00
+@@ -13,3 +13,6 @@
+ missing-license-text-in-dep5-copyright GPL-3\+ *
+ missing-license-text-in-dep5-copyright LGPL-2\+ *
+ missing-license-text-in-dep5-copyright LGPL-2\.1\+ *
++# asterisk-modules pins every emitted group at the version of the build
++# that produced them, so it is rebuilt with them rather than binNMU'd.
++not-binnmuable-all-depends-any

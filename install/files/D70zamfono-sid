@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs inside the chroot before build-dependency resolution. The sid
+# packaging declares a debhelper-compat level that no debhelper in trixie
+# or trixie-backports provides, so the build tooling comes from unstable.
+# Pin priority 100 keeps the resolver from selecting any other unstable
+# package on its own, so every library build-dependency resolves from
+# trixie and the binaries link against what they run on. The debhelper
+# source package is raised on its own so that its version-locked binaries
+# (notably libdebhelper-perl, which debhelper depends on at `= ${version}`)
+# come from unstable together with it.
+set -eu
+echo 'deb http://deb.debian.org/debian sid main' > /etc/apt/sources.list.d/zamfono-sid.list
+printf 'Package: *\nPin: release a=unstable\nPin-Priority: 100\n\nPackage: src:debhelper\nPin: release a=unstable\nPin-Priority: 990\n' > /etc/apt/preferences.d/zamfono-sid-pin
+apt-get update

@@ -1,0 +1,13 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: pip install pytest -r install/requirements.txt
+      - run: python -m pytest tests/unit -q
+      - run: cd install && ansible-playbook --syntax-check playbook.yaml
+      - run: shellcheck install/run.sh install/files/D70zamfono-sid

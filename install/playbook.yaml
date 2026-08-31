@@ -1,0 +1,119 @@
+- name: Zamfono asterisk builder host
+  hosts: builder
+  become: true
+  vars:
+    code_dir: /opt/zamfono/asterisk-builder
+    state_dir: /var/lib/zamfono/asterisk-builder
+    packages_private_ip: 10.250.0.2
+  tasks:
+    # First: converge to fully patched before configuring anything — a fresh
+    # server image is weeks stale, and unattended-upgrades only covers the
+    # security origin on its own daily schedule.
+    - name: Update and upgrade all packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+
+    - name: Check whether the upgrade requires a reboot
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot onto the upgraded packages
+      ansible.builtin.reboot:
+      when: reboot_required.stat.exists
+
+    - name: Install host packages
+      ansible.builtin.apt:
+        name:
+          - pbuilder
+          - dpkg-dev
+          - devscripts
+          # dch validates distribution names with it; absent, it warns on
+          # every changelog stamp:
+          - libdistro-info-perl
+          - lintian
+          - podman
+          - python3
+          - gnupg
+          - unattended-upgrades
+        state: present
+        update_cache: true
+
+    # Automatic-Reboot is safe here: an interrupted build is simply repeated
+    # at the next six-hourly timer firing. The fixed 03:00 reboot time keeps
+    # the reboot clear of the build windows (00/06/12/18 +-15min, done well
+    # within the hour) — without it, apt-daily-upgrade's 06:00+-60min run
+    # would reboot straight into the 06:00 build.
+    - name: Enable unattended security upgrades with automatic reboot
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          Unattended-Upgrade::Automatic-Reboot "true";
+          Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+        mode: "0644"
+
+    - name: State directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ state_dir }}/run"
+        - "{{ state_dir }}/workspace"
+        - /etc/zamfono/pbuilder-hooks
+
+    - name: Deploy orchestrator code
+      ansible.builtin.copy:
+        src: "../{{ item }}"
+        dest: "{{ code_dir }}/{{ item }}"
+        mode: preserve
+      loop:
+        - orchestrator/
+        - manifest/
+        - packaging/
+
+    - name: pbuilder configuration
+      ansible.builtin.copy:
+        src: files/pbuilderrc
+        dest: /etc/zamfono/pbuilderrc
+        mode: "0644"
+
+    - name: sid debhelper pin hook
+      ansible.builtin.copy:
+        src: files/D70zamfono-sid
+        dest: /etc/zamfono/pbuilder-hooks/D70zamfono-sid
+        mode: "0755"
+
+    - name: Create the trixie base chroot tarball
+      ansible.builtin.command:
+        cmd: pbuilder create --configfile /etc/zamfono/pbuilderrc
+        creates: /var/cache/pbuilder/base-trixie.tgz
+
+    - name: Pin the packages host's SSH identity (first provisioning trusts
+        the private network once; every later connection verifies against it)
+      ansible.builtin.shell: |
+        grep -q "^{{ packages_private_ip }} " /root/.ssh/known_hosts 2>/dev/null && exit 9
+        mkdir -p /root/.ssh
+        ssh-keyscan -t ed25519 {{ packages_private_ip }} >> /root/.ssh/known_hosts
+      register: keyscan
+      changed_when: keyscan.rc == 0
+      failed_when: keyscan.rc not in [0, 9]
+
+    - name: systemd units
+      ansible.builtin.copy:
+        src: "files/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: "0644"
+      loop:
+        - asterisk-builder.service
+        - asterisk-builder.timer
+
+    - name: Enable the timer
+      ansible.builtin.systemd_service:
+        name: asterisk-builder.timer
+        enabled: true
+        state: started
+        daemon_reload: true

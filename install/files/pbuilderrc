@@ -1,0 +1,7 @@
+DISTRIBUTION=trixie
+MIRRORSITE=http://deb.debian.org/debian
+BASETGZ=/var/cache/pbuilder/base-trixie.tgz
+HOOKDIR=/etc/zamfono/pbuilder-hooks
+# unshares the network namespace for the build itself; hook execution and
+# build-dependency installation still run networked
+USENETWORK=no

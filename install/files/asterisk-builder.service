@@ -1,0 +1,9 @@
+[Unit]
+Description=Zamfono Asterisk build, gate and upload run
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/zamfono/asterisk-builder
+ExecStart=/usr/bin/python3 -m orchestrator.cli run

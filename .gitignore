@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# transient working documents
+docs/plan*
+docs/superpowers/
+
+# Python / Ansible tooling
+.venv/
+__pycache__/
+install/.venv/
