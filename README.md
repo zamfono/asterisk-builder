@@ -72,7 +72,9 @@ the published one; when sid is newer, one run performs:
    Asterisk, and upgrade + purge checks against the live repository.
 4. **Publish** — the `.changes` is signed with the builder's upload key
    and uploaded to the archive host, which verifies it against its
-   uploader allowlist, signs the indexes, and serves them.
+   uploader allowlist, signs the indexes, and serves them together with
+   the build's `.buildinfo` environment records (the reproducible-build
+   evidence).
 
 The full contract lives in [`docs/specs.md`](docs/specs.md).
 
