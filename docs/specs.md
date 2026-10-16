@@ -4,13 +4,16 @@
 
 `zamfono/asterisk-builder` defines the build hosts `asterisk-builder` (amd64) and
 `asterisk-builder-arm64`. They build Debian 13 (trixie) packages of **Asterisk 22**
-from Debian's `asterisk` source package, split into functional module groups, verify
-every build against a set of gates, and upload the result over the private network
-to the Zamfono packages host (`zamfono/packages`), which publishes it.
+from Debian's `asterisk` source package, split into functional module groups, and of
+**baresip** from its upstream releases (see [baresip](#baresip)), verify every build
+against a set of gates, and upload the result over the private network to the
+Zamfono packages host (`zamfono/packages`), which publishes each product in its own
+archive.
 
-**Scope is locked: one version, one distro** — Asterisk 22 on Debian 13, amd64 and
-arm64. The build starts from Debian's source package (building from upstream
-tarballs would lose AMR support and all of Debian's packaging).
+**Scope is locked: two products, one distro** — Asterisk 22 and baresip on Debian
+13, amd64 and arm64. The Asterisk build starts from Debian's source package
+(building from upstream tarballs would lose AMR support and all of Debian's
+packaging).
 
 ## Architectures
 
@@ -34,13 +37,54 @@ the code and the playbook are the same on both.
   attempt keeps its workspace and holds off the next attempt for that version for
   six hours — amd64's retry cadence — instead of rebuilding back to back.
 
+## baresip
+
+Debian's `baresip` is stuck at 1.1.0 in every suite, so unlike Asterisk there is no
+Debian source to follow: baresip is built from upstream.
+
+- **Source:** the upstream release tarballs of `baresip/baresip` and its library
+  `baresip/re` (libre), which upstream tags in lockstep at the same version. One
+  source package `baresip` carries both — libre as its `re` component tarball
+  (`baresip_<v>.orig-re.tar.gz`) — with this repository's packaging
+  (`packaging/baresip/debian`) and the version `<v>-1+zamfono13.N`.
+- **Trigger:** the primary compares the latest upstream GitHub release (not
+  pre-releases) with the published source version; a newer release is built and
+  published automatically, without review. The tags are unsigned and the
+  tarballs come from GitHub over TLS — that is the trust for them; once
+  published, followers verify against the archive's signed `Sources`, as for
+  Asterisk. Only a plain `vX.Y.Z` tag is accepted.
+- **One binary package, `baresip`**, holding the program, its modules and libre
+  plus libbaresip as **private** libraries in `/usr/lib/<triplet>/baresip`,
+  found through RUNPATH. libre bumps its soname with nearly every release; as a
+  public library each bump would rename its package. The build is headless:
+  `Build-Depends` decides which modules upstream's CMake builds, and leaves out the
+  GUI and video modules (GTK, SDL, X11, FFmpeg, GStreamer, V4L2) and their
+  dependency stacks. Should those be wanted, split them into their own packages
+  then, as Debian does (`baresip-core` plus one package per stack).
+- It conflicts with and replaces Debian's `baresip-core`, which ships the same
+  program.
+- **Archive:** `https://packages.zamfono.com/debian/baresip`, suites `trixie` and
+  `trixie-debug`, uploaded into the upload chroot's `/incoming-baresip`.
+- **Gates:** `dh_missing`, unresolved shared libraries, lintian (errors fail), a
+  clean install on pristine trixie that loads every shipped module into a running
+  baresip, the purge (nothing of the package may remain), and — primary only, once
+  a version is published — the upgrade from it. The module check flags modules
+  that do not *link* (libre's `dl:` lines), not modules that link but decline to
+  start in the container (`evdev` without an input device, `stdio` without a
+  terminal) — the same line the Asterisk module-load gate draws.
+- A packaging change in this repository alone triggers no rebuild; the next
+  upstream release carries it.
+- Both products run in one timer-triggered run under the host lock, Asterisk
+  first; one product's failure never keeps the other from building, and fails
+  the run.
+
 ## Non-goals
 
 - **Archive management.** The builder never runs `reprepro`, never signs
   `Release` files, and never holds the archive signing key. Its only key is its
   upload key.
 - **Multi-version / multi-distro machinery.** The repository URL layout leaves room
-  for more lines later; only Asterisk 22 / trixie is built.
+  for more lines later; only Asterisk 22 and baresip on trixie are built.
 - **Publish orchestration.** Publishing is `debsign` + an SFTP batch upload; ingest and serving
   are the packages host's job.
 
@@ -168,7 +212,9 @@ host-locally, outside Git.
   is key-only.
 - Outbound: Debian mirrors (source fetch, chroot maintenance), HTTPS to
   `packages.zamfono.com` (published versions, the arm64 source fetch, gate
-  containers) and SFTP to the packages host (`10.250.0.2`) for uploads.
+  containers), HTTPS to GitHub (the primary's baresip release check and
+  tarballs: `api.github.com`, `github.com`, `codeload.github.com`) and SFTP to
+  the packages host (`10.250.0.2`) for uploads.
 - The packages host never reaches back into the builder.
 
 ## Verification

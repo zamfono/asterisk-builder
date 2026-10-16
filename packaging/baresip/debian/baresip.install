@@ -1,0 +1,5 @@
+usr/bin/baresip
+usr/lib/${DEB_HOST_MULTIARCH}/baresip/libre.so.*
+usr/lib/${DEB_HOST_MULTIARCH}/libbaresip.so.* usr/lib/${DEB_HOST_MULTIARCH}/baresip
+usr/lib/${DEB_HOST_MULTIARCH}/baresip/modules
+usr/share/baresip

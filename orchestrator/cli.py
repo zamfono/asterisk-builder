@@ -22,7 +22,10 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
+
+from orchestrator import baresip
 
 from orchestrator.gates_deps import check_cross_group_dependencies, check_unresolved_shlibs
 from orchestrator.gates_lint import check_dh_missing, lintian_gate_errors, parse_lintian
@@ -37,7 +40,12 @@ from orchestrator.manifest import (
 )
 from orchestrator.packaging_overlay import install_patches, set_changelog_version_cmd
 from orchestrator.pbuilder import ARCH_BUILD_OPTS, FULL_BUILD_OPTS, run_build
-from orchestrator.published import published_asterisk_versions, published_binary_versions
+from orchestrator.published import (
+    INDEX_BASE_URL,
+    published_asterisk_versions,
+    published_binary_versions,
+    published_source_versions,
+)
 from orchestrator.sid_source import (
     SID_SOURCELIST_CONTENT,
     parse_showsrc_version,
@@ -180,10 +188,13 @@ def _follower_retry_pending(workspace: Path) -> bool:
     return workspace.exists() and time.time() - workspace.stat().st_mtime < FOLLOWER_RETRY_SECONDS
 
 
-def _wait_until_published(arch: str, version: str, timeout: float = INGEST_TIMEOUT_SECONDS) -> bool:
+def _wait_until_published(
+    arch: str, version: str, timeout: float = INGEST_TIMEOUT_SECONDS,
+    index_url: str = INDEX_BASE_URL, package: str = "asterisk",
+) -> bool:
     """True once the archive's index for `arch` lists `version`."""
     deadline = time.monotonic() + timeout
-    while version not in published_binary_versions(arch):
+    while version not in published_binary_versions(arch, index_url, package):
         if time.monotonic() > deadline:
             return False
         time.sleep(10)
@@ -191,7 +202,9 @@ def _wait_until_published(arch: str, version: str, timeout: float = INGEST_TIMEO
 
 
 def _cmd_check(_args) -> int:
-    _next_build(_native_arch())
+    arch = _native_arch()
+    _next_build(arch)
+    _next_baresip_build(arch)
     return 0
 
 
@@ -234,19 +247,22 @@ def _fetch_and_patch(workspace: Path, sid_version: str, zamfono_version: str) ->
     )
 
 
-def _fetch_published_source(workspace: Path, version: str) -> None:
+def _fetch_published_source(
+    workspace: Path, version: str,
+    sourcelist: str = ARCHIVE_SOURCELIST_CONTENT, package: str = "asterisk",
+) -> None:
     """A follower's fetch: the primary's published .dsc and tarballs,
     verified by apt against the archive's signed Sources index and built
     unmodified, so every architecture ships binaries of the same source."""
     prepare_apt_state(APT_STATE_DIR)
-    Path(ARCHIVE_SOURCELIST_PATH).write_text(ARCHIVE_SOURCELIST_CONTENT)
+    Path(ARCHIVE_SOURCELIST_PATH).write_text(sourcelist)
     apt_opts = scoped_apt_opts(ARCHIVE_SOURCELIST_PATH, APT_STATE_DIR)
     # same stale-workspace reasoning as _fetch_and_patch
     shutil.rmtree(workspace, ignore_errors=True)
     workspace.mkdir(parents=True, exist_ok=True)
     subprocess.run(["apt-get", *apt_opts, "update"], check=True)
     subprocess.run(
-        ["apt-get", *apt_opts, "source", "--download-only", f"asterisk={version}"],
+        ["apt-get", *apt_opts, "source", "--download-only", f"{package}={version}"],
         cwd=workspace, check=True,
     )
 
@@ -289,14 +305,8 @@ def _container_check(name: str, workspace: Path, script: str) -> bool:
     return result.returncode == 0
 
 
-def _run_gates_for_candidate(
-    workspace: Path, candidate_version: str, build_log: str, primary: bool = True
-) -> "list[tuple[str, list[str]]]":
-    manifest = load_manifest(MANIFEST_PATH)
-    repo_setup = _candidate_repo_setup(primary)
-    deb_paths = _deb_paths_by_package(workspace)
-    built_modules = built_modules_from_debs(list(deb_paths.values()))
-
+def _run_lintian(workspace: Path) -> "list[str]":
+    """The lintian gate's failures for the candidate's .changes."""
     changes_paths = list(workspace.glob("*.changes"))
     lintian_output = ""
     lintian_returncode = 0
@@ -307,7 +317,6 @@ def _run_gates_for_candidate(
         )
         lintian_output = lintian_result.stdout + lintian_result.stderr
         lintian_returncode = lintian_result.returncode
-    lintian_errors = lintian_gate_errors(lintian_returncode, lintian_output)
     # Warnings are not gate failures, but the spec requires them retained.
     # They are printed to this process's stdout, which systemd captures into
     # the journal — the durable build log for a run whose workspace does not
@@ -315,7 +324,18 @@ def _run_gates_for_candidate(
     _lintian_errors, lintian_warnings = parse_lintian(lintian_output)
     for warning in lintian_warnings:
         print(f"lintian warning: {warning}")
+    return lintian_gate_errors(lintian_returncode, lintian_output)
 
+
+def _run_gates_for_candidate(
+    workspace: Path, candidate_version: str, build_log: str, primary: bool = True
+) -> "list[tuple[str, list[str]]]":
+    manifest = load_manifest(MANIFEST_PATH)
+    repo_setup = _candidate_repo_setup(primary)
+    deb_paths = _deb_paths_by_package(workspace)
+    built_modules = built_modules_from_debs(list(deb_paths.values()))
+
+    lintian_errors = _run_lintian(workspace)
     gates = [
         (
             "manifest coverage",
@@ -487,7 +507,7 @@ def _changes_referenced_files(changes_path: Path) -> "list[str]":
     return names
 
 
-def _sign_and_upload(workspace: Path) -> None:
+def _sign_and_upload(workspace: Path, remote_dir: "str | None" = None) -> None:
     keyid = Path(UPLOAD_KEYID_FILE).read_text().strip()
     # A primary build leaves a companion *_source.changes next to the full
     # *_amd64.changes; the full one already carries source and binaries,
@@ -507,13 +527,186 @@ def _sign_and_upload(workspace: Path) -> None:
     # so `put` lands files there. The .changes itself is transferred last —
     # ingestion on the packages host triggers on *.changes, and everything
     # it references must already be present.
-    batch = "".join(
+    # remote_dir: another archive's incoming directory in the same chroot.
+    batch = (f"cd {remote_dir}\n" if remote_dir else "") + "".join(
         f"put {workspace / name}\n" for name in _changes_referenced_files(changes)
     ) + f"put {changes}\n"
     subprocess.run(
         ["sftp", "-b", "-", UPLOAD_TARGET],
         input=batch, text=True, check=True,
     )
+
+
+def _run_asterisk(arch: str) -> int:
+    primary = arch == PRIMARY_ARCH
+    next_build = _next_build(arch)
+    if next_build is None:
+        return 0
+    zamfono_version, latest_published = next_build
+    workspace = Path(WORKSPACE_BASE) / _safe_name(zamfono_version)
+    if not primary and _follower_retry_pending(workspace):
+        print(f"last attempt for {zamfono_version} failed; kept in {workspace}, retried 6h after it")
+        return 0
+
+    if primary:
+        _fetch_and_patch(workspace, strip_zamfono_suffix(zamfono_version), zamfono_version)
+    else:
+        _fetch_published_source(workspace, zamfono_version)
+
+    build_result = run_build(str(workspace), FULL_BUILD_OPTS if primary else ARCH_BUILD_OPTS)
+    # _fetch_and_patch creates the workspace; a run that never got that
+    # far still reports the log on stderr below.
+    if workspace.is_dir():
+        (workspace / "build.log").write_text(build_result.log)
+    if not build_result.success:
+        print(build_result.log, file=sys.stderr)
+        return 1
+
+    _index_candidate_repo(workspace)
+    cheap_failures = _run_gates_for_candidate(workspace, zamfono_version, build_result.log, primary)
+    if cheap_failures:
+        for name, errors in cheap_failures:
+            print(f"gate ({name}) failed: {errors}", file=sys.stderr)
+        return 1
+
+    # A follower skips the upgrade gate: once the primary has published
+    # a new version, the archive no longer holds the Architecture: all
+    # packages (asterisk-config) the follower's previous version depends
+    # on at exact version, so that version cannot be installed to
+    # upgrade from. The transition itself is packaging, not code, and
+    # identical on every architecture; the primary gated it.
+    lifecycle_errors = _run_module_load_and_upgrade_gates(
+        workspace, zamfono_version, latest_published if primary else None, primary
+    )
+    if lifecycle_errors:
+        print("lifecycle gates failed:\n" + "\n".join(lifecycle_errors), file=sys.stderr)
+        return 1
+
+    _sign_and_upload(workspace)
+    # A run ends only once the archive serves its upload: sftp succeeds
+    # even when the packages host later refuses the .changes, and a
+    # follower's next poll (queued by its timer while this run was busy)
+    # can start the moment this one exits — reading the index before
+    # ingest finished, it would build the same version again. A refused
+    # upload keeps its workspace, like any failed attempt.
+    if not _wait_until_published(arch, zamfono_version):
+        print(f"upload of {zamfono_version} not published after {INGEST_TIMEOUT_SECONDS}s", file=sys.stderr)
+        return 1
+    shutil.rmtree(workspace, ignore_errors=True)  # successful build trees are removed
+    return 0
+
+
+def _next_baresip_build(arch: str) -> "tuple[str, str | None, str | None] | None":
+    """(version to build, latest published for this architecture, upstream
+    version to fetch: None on a follower) or None when there is nothing to
+    build. The primary follows the latest upstream release, a follower the
+    archive's published source, as for asterisk."""
+    if arch == PRIMARY_ARCH:
+        upstream = baresip.latest_upstream_version()
+        published = published_source_versions(baresip.INDEX_BASE_URL, baresip.PACKAGE)
+        latest_published = published[0] if published else None
+        if not should_build(baresip.debian_version(upstream), latest_published):
+            print(f"baresip up to date: upstream={upstream} published={latest_published}")
+            return None
+        print(f"newer baresip release available: {upstream} (published: {latest_published})")
+        version = compute_next_zamfono_version(baresip.debian_version(upstream), published)
+        return version, latest_published, upstream
+
+    sources = published_source_versions(baresip.INDEX_BASE_URL, baresip.PACKAGE)
+    binaries = published_binary_versions(arch, baresip.INDEX_BASE_URL, baresip.PACKAGE)
+    source_version = sources[0] if sources else None
+    latest_published = binaries[0] if binaries else None
+    if source_version is None or (
+        latest_published is not None
+        and not dpkg_compare_versions(source_version, "gt", latest_published)
+    ):
+        print(f"baresip up to date: source={source_version} {arch}={latest_published}")
+        return None
+    print(f"published baresip source not yet built for {arch}: {source_version} ({arch}: {latest_published})")
+    return source_version, latest_published, None
+
+
+def _run_baresip_gates(
+    workspace: Path, version: str, build_log: str, published: "str | None"
+) -> "list[str]":
+    """baresip's gates: dh_missing, unresolved shared libraries, lintian, a
+    clean install that loads every shipped module in a running baresip, the
+    upgrade from the published version (primary only, `published` is None
+    on a follower) and the purge. The package has no Architecture: all
+    companions, so a follower's candidate installs on its own."""
+    errors = (
+        check_dh_missing(build_log)
+        + check_unresolved_shlibs(build_log)
+        + _run_lintian(workspace)
+    )
+    name = f"zamfono-baresip-{_safe_name(version)}"
+    subprocess.run(["podman", "rm", "-f", name], capture_output=True)
+    smoke = subprocess.run(
+        [
+            "podman", "run", "--rm", "--name", name,
+            "-v", f"{workspace}:/out", "-w", "/out",
+            "docker.io/library/debian:13", "sh", "-c",
+            baresip.gate_script(CANDIDATE_REPO_SETUP),
+        ],
+        capture_output=True, text=True,
+    )
+    output = smoke.stdout + smoke.stderr
+    if smoke.returncode != 0:
+        errors.append(f"install, module load or purge failed: {output}")
+    errors += baresip.module_load_failures(output)
+    if published is not None and not _container_check(
+        f"zamfono-baresip-upgrade-{_safe_name(version)}", workspace,
+        baresip.upgrade_check_script(published, version),
+    ):
+        errors.append(f"upgrade from {published} failed")
+    return errors
+
+
+def _run_baresip(arch: str) -> int:
+    primary = arch == PRIMARY_ARCH
+    next_build = _next_baresip_build(arch)
+    if next_build is None:
+        return 0
+    version, latest_published, upstream = next_build
+    workspace = Path(WORKSPACE_BASE) / f"baresip-{_safe_name(version)}"
+    if not primary and _follower_retry_pending(workspace):
+        print(f"last attempt for baresip {version} failed; kept in {workspace}, retried 6h after it")
+        return 0
+
+    if primary:
+        baresip.fetch_upstream(workspace, upstream)
+        subprocess.run(
+            baresip.create_changelog_cmd(version),
+            cwd=workspace / "source", check=True,
+            env={**os.environ, "DEBEMAIL": CHANGELOG_EMAIL, "DEBFULLNAME": CHANGELOG_NAME},
+        )
+    else:
+        _fetch_published_source(
+            workspace, version, baresip.ARCHIVE_SOURCELIST_CONTENT, baresip.PACKAGE
+        )
+
+    build_result = run_build(str(workspace), FULL_BUILD_OPTS if primary else ARCH_BUILD_OPTS)
+    (workspace / "build.log").write_text(build_result.log)
+    if not build_result.success:
+        print(build_result.log, file=sys.stderr)
+        return 1
+
+    _index_candidate_repo(workspace)
+    errors = _run_baresip_gates(
+        workspace, version, build_result.log, latest_published if primary else None
+    )
+    if errors:
+        print("baresip gates failed:\n" + "\n".join(errors), file=sys.stderr)
+        return 1
+
+    _sign_and_upload(workspace, baresip.UPLOAD_DIR)
+    if not _wait_until_published(
+        arch, version, index_url=baresip.INDEX_BASE_URL, package=baresip.PACKAGE
+    ):
+        print(f"upload of baresip {version} not published after {INGEST_TIMEOUT_SECONDS}s", file=sys.stderr)
+        return 1
+    shutil.rmtree(workspace, ignore_errors=True)
+    return 0
 
 
 def _cmd_run(_args) -> int:
@@ -523,62 +716,16 @@ def _cmd_run(_args) -> int:
         return 0
     try:
         arch = _native_arch()
-        primary = arch == PRIMARY_ARCH
-        next_build = _next_build(arch)
-        if next_build is None:
-            return 0
-        zamfono_version, latest_published = next_build
-        workspace = Path(WORKSPACE_BASE) / _safe_name(zamfono_version)
-        if not primary and _follower_retry_pending(workspace):
-            print(f"last attempt for {zamfono_version} failed; kept in {workspace}, retried 6h after it")
-            return 0
-
-        if primary:
-            _fetch_and_patch(workspace, strip_zamfono_suffix(zamfono_version), zamfono_version)
-        else:
-            _fetch_published_source(workspace, zamfono_version)
-
-        build_result = run_build(str(workspace), FULL_BUILD_OPTS if primary else ARCH_BUILD_OPTS)
-        # _fetch_and_patch creates the workspace; a run that never got that
-        # far still reports the log on stderr below.
-        if workspace.is_dir():
-            (workspace / "build.log").write_text(build_result.log)
-        if not build_result.success:
-            print(build_result.log, file=sys.stderr)
-            return 1
-
-        _index_candidate_repo(workspace)
-        cheap_failures = _run_gates_for_candidate(workspace, zamfono_version, build_result.log, primary)
-        if cheap_failures:
-            for name, errors in cheap_failures:
-                print(f"gate ({name}) failed: {errors}", file=sys.stderr)
-            return 1
-
-        # A follower skips the upgrade gate: once the primary has published
-        # a new version, the archive no longer holds the Architecture: all
-        # packages (asterisk-config) the follower's previous version depends
-        # on at exact version, so that version cannot be installed to
-        # upgrade from. The transition itself is packaging, not code, and
-        # identical on every architecture; the primary gated it.
-        lifecycle_errors = _run_module_load_and_upgrade_gates(
-            workspace, zamfono_version, latest_published if primary else None, primary
-        )
-        if lifecycle_errors:
-            print("lifecycle gates failed:\n" + "\n".join(lifecycle_errors), file=sys.stderr)
-            return 1
-
-        _sign_and_upload(workspace)
-        # A run ends only once the archive serves its upload: sftp succeeds
-        # even when the packages host later refuses the .changes, and a
-        # follower's next poll (queued by its timer while this run was busy)
-        # can start the moment this one exits — reading the index before
-        # ingest finished, it would build the same version again. A refused
-        # upload keeps its workspace, like any failed attempt.
-        if not _wait_until_published(arch, zamfono_version):
-            print(f"upload of {zamfono_version} not published after {INGEST_TIMEOUT_SECONDS}s", file=sys.stderr)
-            return 1
-        shutil.rmtree(workspace, ignore_errors=True)  # successful build trees are removed
-        return 0
+        # One product's failure (a red gate, an unreachable upstream) never
+        # keeps the other from building; the run fails if either did.
+        status = 0
+        for run in (_run_asterisk, _run_baresip):
+            try:
+                status = max(status, run(arch))
+            except Exception:
+                traceback.print_exc()
+                status = 1
+        return status
     finally:
         lock.close()
 

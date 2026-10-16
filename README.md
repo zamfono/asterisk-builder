@@ -2,7 +2,9 @@
 
 Builds and publishes module-split [Asterisk](https://www.asterisk.org/) 22
 packages for Debian 13 (trixie; amd64 and arm64), served as a signed APT repository at
-<https://packages.zamfono.com/debian/asterisk>.
+<https://packages.zamfono.com/debian/asterisk>, and current
+[baresip](https://github.com/baresip/baresip) packages, built from upstream
+releases, at <https://packages.zamfono.com/debian/baresip>.
 
 *Unofficial packages, built by Zamfono; not affiliated with or endorsed by
 Sangoma. Asterisk® is a registered trademark of Sangoma Technologies.*
@@ -34,6 +36,23 @@ sudo apt update && sudo apt install asterisk
 Full instructions — source packages, debug symbols, the `latest`/`LTS`
 paths — are on the
 [repository landing page](https://packages.zamfono.com/debian/asterisk).
+
+baresip has its own archive; with the keyring installed as above:
+
+```sh
+sudo tee /etc/apt/sources.list.d/zamfono-baresip.sources <<'EOF'
+Types: deb
+URIs: https://packages.zamfono.com/debian/baresip
+Suites: trixie
+Components: main
+Signed-By: /usr/share/keyrings/zamfono-archive-keyring.gpg
+EOF
+sudo apt update && sudo apt install baresip
+```
+
+It is one headless package: the SIP, TLS, SRTP/DTLS-SRTP, ICE, STUN/TURN,
+Opus, G.711, G.722, ALSA, sound-file and control modules, without the GUI and
+video modules. libre, baresip's library, ships inside it as a private library.
 
 ## What you get
 
@@ -80,6 +99,12 @@ An arm64 builder follows the amd64 one: it polls the archive every five
 minutes and, once a new source version is published, builds exactly that
 source and uploads its arm64 binaries.
 
+baresip runs through the same pipeline in the same run, except for its
+source: Debian's baresip is stuck at 1.1.0, so the primary follows the latest
+upstream release of `baresip/baresip` and `baresip/re` instead of sid, with
+packaging from this repository, and its own gates (install, every module
+loaded in a running baresip, upgrade, purge).
+
 The full contract lives in [`docs/specs.md`](docs/specs.md).
 
 ## Repository layout
@@ -89,6 +114,8 @@ The full contract lives in [`docs/specs.md`](docs/specs.md).
   (`python3 -m orchestrator.cli run`).
 - `manifest/modules.json` — the functional module groups (the product).
 - `packaging/patches/` — the module-split packaging patch.
+- `packaging/baresip/debian/` — the baresip packaging (BSD-3-Clause, as
+  baresip itself).
 - `install/` — Ansible provisioning of the build host.
 
 ## Development

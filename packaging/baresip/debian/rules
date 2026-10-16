@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+# One source package, two upstream tarballs: baresip, and libre as the
+# `re` component (orig-re.tar.gz, extracted into re/). libre changes its
+# soname with nearly every release, so it is built as a private library
+# of baresip, with libbaresip, in /usr/lib/<triplet>/baresip, found
+# through RUNPATH; no other package links against either.
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/architecture.mk
+
+PRIVLIB = /usr/lib/$(DEB_HOST_MULTIARCH)/baresip
+# dh_prep empties debian/tmp before the install step, so the libre that
+# baresip builds against is staged outside debian/
+STAGE = $(CURDIR)/build-re-stage
+
+%:
+	dh $@ --buildsystem=cmake+ninja --builddirectory=build
+
+# baresip configures against a staged libre, so libre is configured, built
+# and installed before baresip is configured.
+override_dh_auto_configure:
+	dh_auto_configure --sourcedirectory=re --builddirectory=build-re -- \
+		-DCMAKE_INSTALL_LIBDIR=lib/$(DEB_HOST_MULTIARCH)/baresip \
+		-DLIBRE_BUILD_STATIC=OFF
+	dh_auto_build --sourcedirectory=re --builddirectory=build-re
+	dh_auto_install --sourcedirectory=re --builddirectory=build-re --destdir=$(STAGE)
+	dh_auto_configure -- \
+		-Dre_DIR=$(STAGE)$(PRIVLIB)/cmake/re \
+		-DRE_INCLUDE_DIR=$(STAGE)/usr/include/re \
+		-DRE_LIBRARY=$(STAGE)$(PRIVLIB)/libre.so \
+		-DCMAKE_INSTALL_RPATH=$(PRIVLIB)
+
+# debian/tmp explicitly: with a single binary package dh_auto_install
+# would install straight into debian/baresip, bypassing baresip.install
+# and dh_missing.
+override_dh_auto_install:
+	dh_auto_install --sourcedirectory=re --builddirectory=build-re --destdir=debian/tmp
+	dh_auto_install --destdir=debian/tmp
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf build-re build-re-stage
+
+# upstream's CMake defines no `test` target (no enable_testing), which
+# dh_auto_test's `ninja test` would fail on
+override_dh_auto_test:
+
+# the private libraries are found through RUNPATH, not the ldconfig cache
+override_dh_makeshlibs:
+	dh_makeshlibs --no-scripts

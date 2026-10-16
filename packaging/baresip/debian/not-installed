@@ -1,0 +1,7 @@
+usr/include
+usr/lib/${DEB_HOST_MULTIARCH}/baresip/cmake
+usr/lib/${DEB_HOST_MULTIARCH}/baresip/libre.so
+usr/lib/${DEB_HOST_MULTIARCH}/baresip/pkgconfig
+usr/lib/${DEB_HOST_MULTIARCH}/libbaresip.so
+usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig
+usr/share/applications

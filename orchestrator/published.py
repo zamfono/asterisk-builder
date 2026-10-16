@@ -1,4 +1,4 @@
-"""Reads the published asterisk versions from the public repository's own
+"""Reads the published versions from an archive's own
 indexes: the source version from Sources, an architecture's binary version
 from that architecture's Packages. The archive is the single source of
 truth for "what is published", so the builder keeps no local state and
@@ -25,21 +25,29 @@ def parse_sources_versions(text: str, package: str = "asterisk") -> "list[str]":
     return versions
 
 
-def _index_versions(index_path: str) -> "list[str]":
+def _index_versions(
+    index_path: str, base_url: str = INDEX_BASE_URL, package: str = "asterisk"
+) -> "list[str]":
     try:
-        with urllib.request.urlopen(INDEX_BASE_URL + index_path, timeout=60) as response:
+        with urllib.request.urlopen(base_url + index_path, timeout=60) as response:
             data = response.read()
     except urllib.error.HTTPError as error:
         if error.code == 404:
             # a fresh archive (or a newly added architecture) has no index yet
             return []
         raise
-    return parse_sources_versions(gzip.decompress(data).decode())
+    return parse_sources_versions(gzip.decompress(data).decode(), package)
 
 
 def published_asterisk_versions() -> "list[str]":
     return _index_versions("source/Sources.gz")
 
 
-def published_binary_versions(arch: str) -> "list[str]":
-    return _index_versions(f"binary-{arch}/Packages.gz")
+def published_source_versions(base_url: str, package: str) -> "list[str]":
+    return _index_versions("source/Sources.gz", base_url, package)
+
+
+def published_binary_versions(
+    arch: str, base_url: str = INDEX_BASE_URL, package: str = "asterisk"
+) -> "list[str]":
+    return _index_versions(f"binary-{arch}/Packages.gz", base_url, package)

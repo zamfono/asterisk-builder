@@ -1,0 +1,5 @@
+# Modules are plugins dlopen'd by baresip. g722 and plc call no libc
+# function themselves (only spandsp, libre and libbaresip), so the
+# toolchain's --as-needed drops libc from them.
+baresip: library-not-linked-against-libc [usr/lib/*/baresip/modules/g722.so]
+baresip: library-not-linked-against-libc [usr/lib/*/baresip/modules/plc.so]
