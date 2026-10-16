@@ -77,8 +77,9 @@ packaging here changes without a new Debian upload.
 
 ## How it works
 
-A six-hourly timer compares Debian `sid`'s `asterisk` source version with
-the published one; when sid is newer, one run performs:
+A timer, every five minutes except 02:00–03:30 UTC (around the hosts'
+03:00 reboot), compares Debian `sid`'s `asterisk` source version with the
+published one; when sid is newer, one run performs:
 
 1. **Fetch + patch** — `apt-get source` from sid; the module-split
    packaging patch must apply with zero fuzz.
@@ -95,9 +96,10 @@ the published one; when sid is newer, one run performs:
    the build's `.buildinfo` environment records (the reproducible-build
    evidence).
 
-An arm64 builder follows the amd64 one: it polls the archive every five
-minutes and, once a new source version is published, builds exactly that
-source and uploads its arm64 binaries.
+An arm64 builder follows the amd64 one: on the same timer it checks the
+archive and, once a new source version is published, builds exactly that
+source and uploads its arm64 binaries. A failed attempt is retried after
+six hours, not on every tick.
 
 baresip runs through the same pipeline in the same run, except for its
 source: Debian's baresip is stuck at 1.1.0, so the primary follows the latest

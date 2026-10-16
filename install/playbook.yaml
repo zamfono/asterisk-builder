@@ -41,11 +41,10 @@
         update_cache: true
 
     # Automatic-Reboot is safe here: an interrupted build is simply repeated
-    # at the next timer firing. The fixed 03:00 reboot time keeps
-    # the reboot clear of the build windows (00/06/12/18 +-15min, done well
-    # within the hour; a follower builds right after the primary publishes)
-    # — without it, apt-daily-upgrade's 06:00+-60min run would reboot
-    # straight into the 06:00 build.
+    # at the next timer firing. The fixed 03:00 reboot time sits inside the
+    # timer's 02:00-03:30 gap, so no build runs into it — without it,
+    # apt-daily-upgrade's 06:00+-60min run would reboot whenever it pleases,
+    # possibly during a build.
     - name: Enable unattended security upgrades with automatic reboot
       ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/20auto-upgrades
@@ -118,9 +117,9 @@
         dest: /etc/systemd/system/asterisk-builder.service
         mode: "0644"
 
-    - name: systemd timer (six-hourly on amd64, five-minutely on a follower)
-      ansible.builtin.template:
-        src: templates/asterisk-builder.timer.j2
+    - name: systemd timer (every five minutes, with a gap around the reboot)
+      ansible.builtin.copy:
+        src: files/asterisk-builder.timer
         dest: /etc/systemd/system/asterisk-builder.timer
         mode: "0644"
 

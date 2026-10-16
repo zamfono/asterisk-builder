@@ -10,7 +10,7 @@ from orchestrator.cli import (
     _changes_referenced_files,
     _container_check,
     _fetch_and_patch,
-    _follower_retry_pending,
+    _retry_pending,
     _next_build,
     _wait_until_published,
     _run_module_load_and_upgrade_gates,
@@ -154,12 +154,12 @@ class FollowerRetryPendingTests(unittest.TestCase):
     def test_holds_off_only_while_a_failed_workspace_is_recent(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "candidate"
-            self.assertFalse(_follower_retry_pending(workspace))
+            self.assertFalse(_retry_pending(workspace))
             workspace.mkdir()
-            self.assertTrue(_follower_retry_pending(workspace))
+            self.assertTrue(_retry_pending(workspace))
             seven_hours_ago = time.time() - 7 * 3600
             os.utime(workspace, (seven_hours_ago, seven_hours_ago))
-            self.assertFalse(_follower_retry_pending(workspace))
+            self.assertFalse(_retry_pending(workspace))
 
 
 class WaitUntilPublishedTests(unittest.TestCase):

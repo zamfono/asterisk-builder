@@ -33,9 +33,10 @@ the code and the playbook are the same on both.
 - arm64 polls the archive every five minutes, so it publishes about one arm64
   build after amd64. Until then, new arm64 installs fail (`asterisk` depends on
   `asterisk-config` at its exact version, which the archive holds only at the new
-  version) and upgrades on existing arm64 hosts are held back. A failed arm64
-  attempt keeps its workspace and holds off the next attempt for that version for
-  six hours — amd64's retry cadence — instead of rebuilding back to back.
+  version) and upgrades on existing arm64 hosts are held back.
+- On either architecture, a failed attempt keeps its workspace and holds off the
+  next attempt for that version for six hours instead of rebuilding back to back
+  every five minutes; a newer version builds at once.
 
 ## baresip
 
@@ -90,8 +91,10 @@ Debian source to follow: baresip is built from upstream.
 
 ## Build pipeline
 
-1. **Trigger:** a systemd timer runs the freshness check six-hourly (arm64: every
-   five minutes, see above). It compares
+1. **Trigger:** a systemd timer runs the freshness check every five minutes on
+   every builder, except 02:00–03:25 UTC (the hosts' time), the hour around the
+   03:00 unattended reboot: a run started before 02:00 is done before the
+   reboot, and none starts until the host is back. It compares
    the `asterisk` source version in Debian `sid` against the last published
    version; nothing newer → exit.
 2. **Fetch:** `apt-get source asterisk` from sid. Building sid source on trixie
@@ -187,12 +190,12 @@ manual playbook run, never a service. This repository carries `install/`:
 - `playbook.yaml` — the host's full configuration (full system upgrade with a
   reboot when one is required, pbuilder and its base chroot,
   the build/gate scripts, the systemd timer and service, the debhelper pin,
-  unattended security upgrades with automatic reboot at 03:00 — clear of the
-  00/06/12/18 build windows and the arm64 builds right after them). An interrupted build is simply repeated at the
-  next timer firing, with one exception: a reboot during the base-chroot
-  update can truncate `base-trixie.tgz`, which an operator must recreate
-  (`rm` it and re-run the playbook); the 03:00 window makes that a
-  non-event in practice.
+  unattended security upgrades with automatic reboot at 03:00 UTC — inside the
+  timer's 02:00–03:30 gap, so no build runs into it). An interrupted build is
+  simply repeated at the next timer firing, with one exception: a reboot during
+  the base-chroot update can truncate `base-trixie.tgz`, which an operator must
+  recreate (`rm` it and re-run the playbook); the gap makes that a non-event in
+  practice.
 - `run.sh` — entry point: creates/updates a local virtualenv from the pin file,
   runs the playbook.
 - `requirements.txt` — pins the exact `ansible-core` version. `ansible.builtin`

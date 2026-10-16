@@ -1,0 +1,14 @@
+# Every five minutes on every builder, except 02:00-03:25 (UTC, the hosts'
+# time): nothing starts in the hour before the 03:00 unattended reboot, so a
+# run that started earlier is done by then, and nothing starts until the host
+# is back. The second line is the 03:30-03:55 remainder of that hour.
+[Unit]
+Description=Five-minutely Zamfono build check
+
+[Timer]
+OnCalendar=*-*-* 00..01,04..23:00/5:00
+OnCalendar=*-*-* 03:30/5:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

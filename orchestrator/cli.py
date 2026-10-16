@@ -69,11 +69,11 @@ ARCHIVE_SOURCELIST_CONTENT = (
 APT_STATE_DIR = f"{RUNTIME_DIR}/apt"
 LOCK_PATH = f"{RUNTIME_DIR}/lock"
 PRIMARY_ARCH = "amd64"
-# A follower polls every five minutes; a failed attempt's workspace is kept
-# for diagnosis and holds off the next attempt for that version this long —
-# the primary's own retry cadence — instead of a back-to-back rebuild
-# discarding the evidence minutes after the failure.
-FOLLOWER_RETRY_SECONDS = 6 * 3600
+# Every builder polls every five minutes; a failed attempt's workspace is
+# kept for diagnosis and holds off the next attempt for that version this
+# long, instead of a back-to-back rebuild discarding the evidence minutes
+# after the failure. A newer version gets its own workspace and builds at once.
+RETRY_SECONDS = 6 * 3600
 # Ingest takes seconds; this only bounds a refused or stuck upload.
 INGEST_TIMEOUT_SECONDS = 600
 WORKSPACE_BASE = "/var/lib/zamfono/asterisk-builder/workspace"
@@ -182,10 +182,10 @@ def _next_build(arch: str) -> "tuple[str, str | None] | None":
     return source_version, latest_published
 
 
-def _follower_retry_pending(workspace: Path) -> bool:
+def _retry_pending(workspace: Path) -> bool:
     """True while a failed attempt's kept workspace is younger than
-    FOLLOWER_RETRY_SECONDS (successful runs remove theirs)."""
-    return workspace.exists() and time.time() - workspace.stat().st_mtime < FOLLOWER_RETRY_SECONDS
+    RETRY_SECONDS (successful runs remove theirs)."""
+    return workspace.exists() and time.time() - workspace.stat().st_mtime < RETRY_SECONDS
 
 
 def _wait_until_published(
@@ -544,7 +544,7 @@ def _run_asterisk(arch: str) -> int:
         return 0
     zamfono_version, latest_published = next_build
     workspace = Path(WORKSPACE_BASE) / _safe_name(zamfono_version)
-    if not primary and _follower_retry_pending(workspace):
+    if _retry_pending(workspace):
         print(f"last attempt for {zamfono_version} failed; kept in {workspace}, retried 6h after it")
         return 0
 
@@ -584,8 +584,8 @@ def _run_asterisk(arch: str) -> int:
 
     _sign_and_upload(workspace)
     # A run ends only once the archive serves its upload: sftp succeeds
-    # even when the packages host later refuses the .changes, and a
-    # follower's next poll (queued by its timer while this run was busy)
+    # even when the packages host later refuses the .changes, and the
+    # next poll (queued by the timer while this run was busy)
     # can start the moment this one exits — reading the index before
     # ingest finished, it would build the same version again. A refused
     # upload keeps its workspace, like any failed attempt.
@@ -669,7 +669,7 @@ def _run_baresip(arch: str) -> int:
         return 0
     version, latest_published, upstream = next_build
     workspace = Path(WORKSPACE_BASE) / f"baresip-{_safe_name(version)}"
-    if not primary and _follower_retry_pending(workspace):
+    if _retry_pending(workspace):
         print(f"last attempt for baresip {version} failed; kept in {workspace}, retried 6h after it")
         return 0
 
