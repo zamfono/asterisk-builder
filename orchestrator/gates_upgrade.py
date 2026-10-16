@@ -10,7 +10,7 @@ then upgrades to the indexed candidate directory mounted at /out.
 archive signatures (the packages host's verification covers those), and the
 candidate is unsigned by design at this point."""
 
-PREVIOUS_APT_LINE = (
+ARCHIVE_APT_LINE = (
     "deb [trusted=yes] https://packages.zamfono.com/debian/asterisk/22 trixie main"
 )
 
@@ -22,7 +22,7 @@ def upgrade_check_script(previous_version: str, candidate_version: str) -> str:
         # the debian:13 base image ships no TLS trust store, and the
         # previous version arrives over HTTPS:
         "apt-get install -y ca-certificates\n"
-        f"echo '{PREVIOUS_APT_LINE}' > /etc/apt/sources.list.d/zamfono-previous.list\n"
+        f"echo '{ARCHIVE_APT_LINE}' > /etc/apt/sources.list.d/zamfono-previous.list\n"
         "apt-get update\n"
         f"apt-get install -y asterisk={previous_version} asterisk-modules-core={previous_version}\n"
         "cp /etc/asterisk/asterisk.conf /tmp/asterisk.conf.before-upgrade\n"

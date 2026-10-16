@@ -8,6 +8,7 @@ from orchestrator.cli import (
     _changes_referenced_files,
     _container_check,
     _fetch_and_patch,
+    _next_build,
     _run_module_load_and_upgrade_gates,
     _safe_name,
     main,
@@ -118,6 +119,31 @@ class RunSubcommandTests(unittest.TestCase):
     def test_run_exits_zero_without_side_effects_when_lock_is_held(self, _acquire_lock):
         exit_code = main(["run"])
         self.assertEqual(exit_code, 0)
+
+
+@patch("orchestrator.cli.sid_asterisk_version", side_effect=AssertionError("followers never read sid"))
+class FollowerNextBuildTests(unittest.TestCase):
+    SOURCE = "1:22.10.1-1+zamfono13.2"
+
+    def _next_build(self, sources, arm64):
+        with patch("orchestrator.cli.published_asterisk_versions", return_value=sources), \
+                patch("orchestrator.cli.published_binary_versions", return_value=arm64):
+            return _next_build("arm64")
+
+    def test_builds_the_published_source_when_the_architecture_has_nothing_yet(self, _sid):
+        self.assertEqual(self._next_build([self.SOURCE], []), (self.SOURCE, None))
+
+    def test_builds_the_published_source_when_the_architecture_lags_behind(self, _sid):
+        self.assertEqual(
+            self._next_build([self.SOURCE], ["1:22.10.1-1+zamfono13.1"]),
+            (self.SOURCE, "1:22.10.1-1+zamfono13.1"),
+        )
+
+    def test_nothing_to_build_when_the_architecture_is_current(self, _sid):
+        self.assertIsNone(self._next_build([self.SOURCE], [self.SOURCE]))
+
+    def test_nothing_to_build_before_the_primary_published_any_source(self, _sid):
+        self.assertIsNone(self._next_build([], []))
 
 
 class FetchAndPatchTests(unittest.TestCase):

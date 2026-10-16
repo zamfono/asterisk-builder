@@ -1,6 +1,8 @@
-"""Builds the patched source tree in a pbuilder trixie chroot. dpkg-source
-generates the .dsc first, then the chroot is updated (the base tarball only
-needs to be current at build time) before pbuilder builds from that .dsc.
+"""Builds the candidate in a pbuilder trixie chroot. A primary build packs
+its patched source tree into a .dsc with dpkg-source first; a follower build
+downloaded the published .dsc and builds it as is. The chroot is then
+updated (the base tarball only needs to be current at build time) before
+pbuilder builds from that .dsc.
 The whole log is captured and returned: the dh_missing gate greps it, and it
 is the durable record of a run whose workspace does not survive success."""
 import subprocess
@@ -8,6 +10,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PBUILDERRC = "/etc/zamfono/pbuilderrc"
+# --build=full: the .changes must carry the source (.dsc + tarballs — the
+# archive publishes deb-src). -sa: a new upstream version's tarballs are
+# never in the pool yet, and a .changes without them fails ingestion; on a
+# rebuild reprepro verifies matching checksums instead, so -sa is always
+# safe.
+FULL_BUILD_OPTS = "-sa --build=full"
+# A follower uploads only its architecture's binaries: the source and the
+# Architecture: all packages are already published by the primary.
+ARCH_BUILD_OPTS = "--build=any"
 
 
 @dataclass
@@ -22,10 +33,12 @@ def _run_logged(cmd: "list[str]", cwd: Path, log_parts: "list[str]") -> bool:
     return result.returncode == 0
 
 
-def run_build(workspace: str) -> BuildResult:
+def run_build(workspace: str, debbuildopts: str = FULL_BUILD_OPTS) -> BuildResult:
     workspace_path = Path(workspace)
     log_parts: "list[str]" = []
-    if not _run_logged(["dpkg-source", "-b", "source"], workspace_path, log_parts):
+    if (workspace_path / "source").is_dir() and not _run_logged(
+        ["dpkg-source", "-b", "source"], workspace_path, log_parts
+    ):
         return BuildResult(False, "\n".join(log_parts))
     dsc_paths = list(workspace_path.glob("*.dsc"))
     if len(dsc_paths) != 1:
@@ -42,12 +55,7 @@ def run_build(workspace: str) -> BuildResult:
             "pbuilder", "build",
             "--configfile", PBUILDERRC,
             "--buildresult", str(workspace_path),
-            # --build=full: the .changes must carry the source (.dsc +
-            # tarballs — the archive publishes deb-src). -sa: a new upstream
-            # version's tarballs are never in the pool yet, and a .changes
-            # without them fails ingestion; on a rebuild reprepro verifies
-            # matching checksums instead, so -sa is always safe.
-            "--debbuildopts", "-sa --build=full",
+            "--debbuildopts", debbuildopts,
             str(dsc_paths[0]),
         ],
         workspace_path,

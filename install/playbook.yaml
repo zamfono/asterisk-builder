@@ -81,6 +81,15 @@
         dest: /etc/zamfono/pbuilderrc
         mode: "0644"
 
+    # A follower (non-amd64) builder verifies the source it downloads from
+    # the archive against this keyring; a copy of zamfono/packages'
+    # keyring/zamfono-archive-keyring.gpg, so a subkey event updates both.
+    - name: Archive keyring
+      ansible.builtin.copy:
+        src: files/zamfono-archive-keyring.gpg
+        dest: /etc/zamfono/zamfono-archive-keyring.gpg
+        mode: "0644"
+
     - name: sid debhelper pin hook
       ansible.builtin.copy:
         src: files/D70zamfono-sid

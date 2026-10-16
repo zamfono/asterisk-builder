@@ -1,7 +1,7 @@
 # asterisk-builder
 
 Builds and publishes module-split [Asterisk](https://www.asterisk.org/) 22
-packages for Debian 13 (trixie, amd64), served as a signed APT repository at
+packages for Debian 13 (trixie; amd64 and arm64), served as a signed APT repository at
 <https://packages.zamfono.com/debian/asterisk>.
 
 *Unofficial packages, built by Zamfono; not affiliated with or endorsed by
@@ -75,6 +75,10 @@ the published one; when sid is newer, one run performs:
    uploader allowlist, signs the indexes, and serves them together with
    the build's `.buildinfo` environment records (the reproducible-build
    evidence).
+
+An arm64 builder follows the amd64 one: once a new source version is
+published, it builds exactly that source from the archive and uploads its
+arm64 binaries.
 
 The full contract lives in [`docs/specs.md`](docs/specs.md).
 

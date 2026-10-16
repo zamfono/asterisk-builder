@@ -1,12 +1,19 @@
-"""asterisk-builder's entry point. `check` only reports whether a newer sid
-source exists (no side effects). `run` is what the systemd timer invokes:
-check, and only if newer, fetch/patch/build/gate/sign/upload; always under
-the host lock. Gates that only need the already-produced build artifacts
-and the containerized install gates run in one non-fail-fast pass so a
-candidate's full gate report is visible before it is discarded; the
-lifecycle gates (module load, upgrade, purge) run afterwards, only once
-that pass is clean. Publishing is debsign + an sftp batch upload; ingest
-and serving are the packages host's job."""
+"""asterisk-builder's entry point. `check` only reports whether there is
+something to build (no side effects). `run` is what the systemd timer
+invokes: check, and only if needed, fetch/build/gate/sign/upload; always
+under the host lock. Gates that only need the already-produced build
+artifacts and the containerized install gates run in one non-fail-fast
+pass so a candidate's full gate report is visible before it is discarded;
+the lifecycle gates (module load, upgrade, purge) run afterwards, only
+once that pass is clean. Publishing is debsign + an sftp batch upload;
+ingest and serving are the packages host's job.
+
+The host's own architecture decides its role. The amd64 builder is the
+primary: it imports newer sid sources, patches them, and publishes the
+source, the Architecture: all packages and its amd64 binaries. Every other
+architecture follows: once the primary has published a source version its
+own binaries lag behind, it downloads exactly that source from the archive
+and uploads only its architecture's binaries."""
 import argparse
 import concurrent.futures
 import os
@@ -19,7 +26,7 @@ from pathlib import Path
 from orchestrator.gates_deps import check_cross_group_dependencies, check_unresolved_shlibs
 from orchestrator.gates_lint import check_dh_missing, lintian_gate_errors, parse_lintian
 from orchestrator.gates_meta import check_asterisk_core_only_dependency, check_meta_package
-from orchestrator.gates_upgrade import purge_check_script, upgrade_check_script
+from orchestrator.gates_upgrade import ARCHIVE_APT_LINE, purge_check_script, upgrade_check_script
 from orchestrator.lock import acquire_lock
 from orchestrator.manifest import (
     built_modules_from_debs,
@@ -28,8 +35,8 @@ from orchestrator.manifest import (
     validate_structure,
 )
 from orchestrator.packaging_overlay import install_patches, set_changelog_version_cmd
-from orchestrator.pbuilder import run_build
-from orchestrator.published import published_asterisk_versions
+from orchestrator.pbuilder import ARCH_BUILD_OPTS, FULL_BUILD_OPTS, run_build
+from orchestrator.published import published_asterisk_versions, published_binary_versions
 from orchestrator.sid_source import (
     SID_SOURCELIST_CONTENT,
     parse_showsrc_version,
@@ -37,13 +44,22 @@ from orchestrator.sid_source import (
     scoped_apt_opts,
 )
 from orchestrator.version import compute_next_zamfono_version
-from orchestrator.versioncheck import should_build
+from orchestrator.versioncheck import dpkg_compare_versions, should_build, strip_zamfono_suffix
 
 RUNTIME_DIR = "/var/lib/zamfono/asterisk-builder/run"
 # `.list`, not `.sources` — apt selects its parser by file extension.
 SID_SOURCELIST_PATH = f"{RUNTIME_DIR}/sid.list"
+ARCHIVE_SOURCELIST_PATH = f"{RUNTIME_DIR}/archive.list"
+# Pinned in this repository (install/files), not fetched from the archive it
+# authenticates: a follower signs and uploads whatever source it downloads,
+# so that source must verify against the archive key, not just HTTPS.
+ARCHIVE_SOURCELIST_CONTENT = (
+    "deb-src [signed-by=/etc/zamfono/zamfono-archive-keyring.gpg]"
+    " https://packages.zamfono.com/debian/asterisk/22 trixie main\n"
+)
 APT_STATE_DIR = f"{RUNTIME_DIR}/apt"
 LOCK_PATH = f"{RUNTIME_DIR}/lock"
+PRIMARY_ARCH = "amd64"
 WORKSPACE_BASE = "/var/lib/zamfono/asterisk-builder/workspace"
 MANIFEST_PATH = "manifest/modules.json"
 # One line: the key id debsign signs .changes with. Host-local, never in Git.
@@ -64,6 +80,12 @@ CANDIDATE_REPO_SETUP = (
 def _safe_name(version: str) -> str:
     """Maps a Debian version to a filesystem- and container-name-safe string."""
     return re.sub(r"[^A-Za-z0-9_.-]", "-", version)
+
+
+def _native_arch() -> str:
+    return subprocess.run(
+        ["dpkg", "--print-architecture"], capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 def _write_sid_sourcelist() -> None:
@@ -117,14 +139,35 @@ def sid_asterisk_version() -> str:
     return parse_showsrc_version(result.stdout)
 
 
-def _cmd_check(_args) -> int:
-    sid_version = sid_asterisk_version()
-    published = published_asterisk_versions()
-    latest_published = published[0] if published else None
-    if should_build(sid_version, latest_published):
+def _next_build(arch: str) -> "tuple[str, str | None] | None":
+    """The version to build on this architecture and the latest version
+    already published for it, or None when there is nothing to build."""
+    if arch == PRIMARY_ARCH:
+        sid_version = sid_asterisk_version()
+        published = published_asterisk_versions()
+        latest_published = published[0] if published else None
+        if not should_build(sid_version, latest_published):
+            print(f"up to date: sid={sid_version} published={latest_published}")
+            return None
         print(f"newer sid asterisk source available: {sid_version} (published: {latest_published})")
-    else:
-        print(f"up to date: sid={sid_version} published={latest_published}")
+        return compute_next_zamfono_version(sid_version, published), latest_published
+
+    sources = published_asterisk_versions()
+    binaries = published_binary_versions(arch)
+    source_version = sources[0] if sources else None
+    latest_published = binaries[0] if binaries else None
+    if source_version is None or (
+        latest_published is not None
+        and not dpkg_compare_versions(source_version, "gt", latest_published)
+    ):
+        print(f"up to date: source={source_version} {arch}={latest_published}")
+        return None
+    print(f"published source not yet built for {arch}: {source_version} ({arch}: {latest_published})")
+    return source_version, latest_published
+
+
+def _cmd_check(_args) -> int:
+    _next_build(_native_arch())
     return 0
 
 
@@ -167,6 +210,38 @@ def _fetch_and_patch(workspace: Path, sid_version: str, zamfono_version: str) ->
     )
 
 
+def _fetch_published_source(workspace: Path, version: str) -> None:
+    """A follower's fetch: the primary's published .dsc and tarballs,
+    verified by apt against the archive's signed Sources index and built
+    unmodified, so every architecture ships binaries of the same source."""
+    prepare_apt_state(APT_STATE_DIR)
+    Path(ARCHIVE_SOURCELIST_PATH).write_text(ARCHIVE_SOURCELIST_CONTENT)
+    apt_opts = scoped_apt_opts(ARCHIVE_SOURCELIST_PATH, APT_STATE_DIR)
+    # same stale-workspace reasoning as _fetch_and_patch
+    shutil.rmtree(workspace, ignore_errors=True)
+    workspace.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["apt-get", *apt_opts, "update"], check=True)
+    subprocess.run(
+        ["apt-get", *apt_opts, "source", "--download-only", f"asterisk={version}"],
+        cwd=workspace, check=True,
+    )
+
+
+def _candidate_repo_setup(primary: bool) -> str:
+    """A follower's candidate lacks the Architecture: all packages
+    (asterisk-config, the asterisk-modules meta package, ...); the gate
+    containers take those from the archive, where the primary published
+    them at this same version. The debian:13 image ships no TLS trust
+    store, hence ca-certificates first."""
+    if primary:
+        return CANDIDATE_REPO_SETUP
+    return (
+        "apt-get update && apt-get install -y ca-certificates"
+        f" && echo '{ARCHIVE_APT_LINE}' > /etc/apt/sources.list.d/zamfono-archive.list"
+        f" && {CANDIDATE_REPO_SETUP}"
+    )
+
+
 def _deb_paths_by_package(workspace: Path) -> "dict[str, str]":
     return {p.name.split("_", 1)[0]: str(p) for p in workspace.glob("*.deb")}
 
@@ -190,8 +265,11 @@ def _container_check(name: str, workspace: Path, script: str) -> bool:
     return result.returncode == 0
 
 
-def _run_gates_for_candidate(workspace: Path, candidate_version: str, build_log: str) -> "list[tuple[str, list[str]]]":
+def _run_gates_for_candidate(
+    workspace: Path, candidate_version: str, build_log: str, primary: bool = True
+) -> "list[tuple[str, list[str]]]":
     manifest = load_manifest(MANIFEST_PATH)
+    repo_setup = _candidate_repo_setup(primary)
     deb_paths = _deb_paths_by_package(workspace)
     built_modules = built_modules_from_debs(list(deb_paths.values()))
 
@@ -228,22 +306,28 @@ def _run_gates_for_candidate(workspace: Path, candidate_version: str, build_log:
         ),
         ("lintian", lambda: lintian_errors),
         (
-            "meta-package coverage",
-            lambda: check_meta_package(manifest, built_modules, deb_paths["asterisk-modules"], candidate_version)
-            if "asterisk-modules" in deb_paths
-            else ["asterisk-modules package was not built"],
-        ),
-        (
             "minimal install",
             lambda: []
             if _container_check(
                 f"zamfono-minimal-{_safe_name(candidate_version)}",
                 workspace,
-                f"{CANDIDATE_REPO_SETUP} && apt-get install -y asterisk asterisk-modules-core",
+                f"{repo_setup} && apt-get install -y asterisk asterisk-modules-core",
             )
             else ["minimal asterisk + asterisk-modules-core install failed"],
         ),
     ]
+    # The meta package is Architecture: all, built and gated by the primary
+    # only; a follower's full install in the lifecycle gate still proves
+    # every group it depends on exists for the follower's architecture.
+    if primary:
+        gates.append(
+            (
+                "meta-package coverage",
+                lambda: check_meta_package(manifest, built_modules, deb_paths["asterisk-modules"], candidate_version)
+                if "asterisk-modules" in deb_paths
+                else ["asterisk-modules package was not built"],
+            )
+        )
     for package in deb_paths:
         if package in ("asterisk", "asterisk-config", "asterisk-modules-core", "asterisk-modules"):
             continue
@@ -259,7 +343,7 @@ def _run_gates_for_candidate(workspace: Path, candidate_version: str, build_log:
                 if _container_check(
                     f"zamfono-install-{pkg}",
                     workspace,
-                    f"{CANDIDATE_REPO_SETUP} && apt-get install -y {pkg}",
+                    f"{repo_setup} && apt-get install -y {pkg}",
                 )
                 else [f"install failed for {pkg}"],
             )
@@ -279,7 +363,9 @@ def _run_gates_for_candidate(workspace: Path, candidate_version: str, build_log:
     ]
 
 
-def _run_module_load_and_upgrade_gates(workspace: Path, candidate_version: str, published: "str | None") -> "list[str]":
+def _run_module_load_and_upgrade_gates(
+    workspace: Path, candidate_version: str, published: "str | None", primary: bool = True
+) -> "list[str]":
     container_name = f"zamfono-lifecycle-{_safe_name(candidate_version)}"
     subprocess.run(["podman", "rm", "-f", container_name], capture_output=True)
     subprocess.run(
@@ -295,7 +381,7 @@ def _run_module_load_and_upgrade_gates(workspace: Path, candidate_version: str, 
         # names pull in the complete candidate.
         install = subprocess.run(
             ["podman", "exec", container_name, "sh", "-c",
-             f"{CANDIDATE_REPO_SETUP} && apt-get install -y asterisk asterisk-modules"],
+             f"{_candidate_repo_setup(primary)} && apt-get install -y asterisk asterisk-modules"],
             capture_output=True, text=True,
         )
         if install.returncode != 0:
@@ -379,7 +465,7 @@ def _changes_referenced_files(changes_path: Path) -> "list[str]":
 
 def _sign_and_upload(workspace: Path) -> None:
     keyid = Path(UPLOAD_KEYID_FILE).read_text().strip()
-    # pbuilder leaves a companion *_source.changes next to the full
+    # A primary build leaves a companion *_source.changes next to the full
     # *_amd64.changes; the full one already carries source and binaries,
     # and it is the only one uploaded.
     changes_paths = [
@@ -412,19 +498,20 @@ def _cmd_run(_args) -> int:
         print("another run holds the lock; exiting without changes")
         return 0
     try:
-        sid_version = sid_asterisk_version()
-        published = published_asterisk_versions()
-        latest_published = published[0] if published else None
-        if not should_build(sid_version, latest_published):
-            print(f"up to date: sid={sid_version} published={latest_published}")
+        arch = _native_arch()
+        primary = arch == PRIMARY_ARCH
+        next_build = _next_build(arch)
+        if next_build is None:
             return 0
-
-        zamfono_version = compute_next_zamfono_version(sid_version, published)
+        zamfono_version, latest_published = next_build
         workspace = Path(WORKSPACE_BASE) / _safe_name(zamfono_version)
 
-        _fetch_and_patch(workspace, sid_version, zamfono_version)
+        if primary:
+            _fetch_and_patch(workspace, strip_zamfono_suffix(zamfono_version), zamfono_version)
+        else:
+            _fetch_published_source(workspace, zamfono_version)
 
-        build_result = run_build(str(workspace))
+        build_result = run_build(str(workspace), FULL_BUILD_OPTS if primary else ARCH_BUILD_OPTS)
         # _fetch_and_patch creates the workspace; a run that never got that
         # far still reports the log on stderr below.
         if workspace.is_dir():
@@ -434,13 +521,21 @@ def _cmd_run(_args) -> int:
             return 1
 
         _index_candidate_repo(workspace)
-        cheap_failures = _run_gates_for_candidate(workspace, zamfono_version, build_result.log)
+        cheap_failures = _run_gates_for_candidate(workspace, zamfono_version, build_result.log, primary)
         if cheap_failures:
             for name, errors in cheap_failures:
                 print(f"gate ({name}) failed: {errors}", file=sys.stderr)
             return 1
 
-        lifecycle_errors = _run_module_load_and_upgrade_gates(workspace, zamfono_version, latest_published)
+        # A follower skips the upgrade gate: once the primary has published
+        # a new version, the archive no longer holds the Architecture: all
+        # packages (asterisk-config) the follower's previous version depends
+        # on at exact version, so that version cannot be installed to
+        # upgrade from. The transition itself is packaging, not code, and
+        # identical on every architecture; the primary gated it.
+        lifecycle_errors = _run_module_load_and_upgrade_gates(
+            workspace, zamfono_version, latest_published if primary else None, primary
+        )
         if lifecycle_errors:
             print("lifecycle gates failed:\n" + "\n".join(lifecycle_errors), file=sys.stderr)
             return 1

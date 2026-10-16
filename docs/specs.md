@@ -2,15 +2,35 @@
 
 ## Purpose
 
-`zamfono/asterisk-builder` defines the build host `asterisk-builder`. It builds
-Debian 13 (trixie) amd64 packages of **Asterisk 22** from Debian's `asterisk` source
-package, split into functional module groups, verifies every build against a set of
-gates, and uploads the result over the private network to the Zamfono packages host
-(`zamfono/packages`), which publishes it.
+`zamfono/asterisk-builder` defines the build hosts `asterisk-builder` (amd64) and
+`asterisk-builder-arm64`. They build Debian 13 (trixie) packages of **Asterisk 22**
+from Debian's `asterisk` source package, split into functional module groups, verify
+every build against a set of gates, and upload the result over the private network
+to the Zamfono packages host (`zamfono/packages`), which publishes it.
 
-**Scope is locked: one version, one distro** — Asterisk 22 on Debian 13/amd64. The
-build starts from Debian's source package (building from upstream tarballs would
-lose AMR support and all of Debian's packaging).
+**Scope is locked: one version, one distro** — Asterisk 22 on Debian 13, amd64 and
+arm64. The build starts from Debian's source package (building from upstream
+tarballs would lose AMR support and all of Debian's packaging).
+
+## Architectures
+
+Each host's role follows from its own architecture (`dpkg --print-architecture`);
+the code and the playbook are the same on both.
+
+- **amd64 is the primary.** It runs the pipeline below in full and publishes the
+  source, the `Architecture: all` packages (`asterisk-config`, `asterisk-dev`,
+  `asterisk-doc`, the `asterisk-modules` meta package) and its amd64 binaries.
+- **arm64 follows.** When the archive's published source version is newer than its
+  published arm64 binaries (or none exist), it downloads exactly that source from
+  the archive — `apt` verifies it against the archive key, pinned in this repository
+  as `install/files/zamfono-archive-keyring.gpg` — builds it unmodified with
+  `--build=any`, runs the gates, and uploads the arm64 binaries only. It never reads
+  sid, never patches, and never computes a version: every architecture ships the
+  same source at the same `+zamfono13.N`.
+- Both hosts run the same six-hourly timer, so arm64 publishes up to one timer
+  interval plus a build after amd64. Until then, new arm64 installs fail
+  (`asterisk` depends on `asterisk-config` at its exact version, which the archive
+  holds only at the new version) and upgrades on existing arm64 hosts are held back.
 
 ## Non-goals
 
@@ -88,12 +108,20 @@ The gates are the quality bar; they run on every build:
   present-set check false-positives on every build. Investigated three times;
   settled — do not "fix" it.
 - **Meta-package coverage** — the meta packages pull in the intended groups.
-- **Upgrade** — upgrading from the previously published version succeeds.
+  Primary only: the meta package is `Architecture: all`, built by amd64; the arm64
+  full install (module-load gate) still proves every group exists on arm64.
+- **Upgrade** — upgrading from the previously published version succeeds. Primary
+  only: by the time arm64 builds, the archive no longer holds the `asterisk-config`
+  its previous version depends on, so that version cannot be installed to upgrade
+  from; the transition is packaging, identical on every architecture.
+
+On arm64 the install gates take the `Architecture: all` packages from the archive,
+where amd64 published them at the candidate's version.
 - **Purge** — removing and purging leaves the system clean.
 
 ## Keys
 
-- The builder holds exactly one signing identity: its **upload key**, used by
+- Each builder holds exactly one signing identity: its own **upload key**, used by
   `debsign` on `.changes` files. The packages host authorizes it in reprepro's
   `conf/uploaders` — that listing is what makes this builder allowed to publish.
 - The archive signing key never exists on this host. A builder compromise therefore
@@ -130,10 +158,12 @@ host-locally, outside Git.
 
 - The builder offers no public services; the Hetzner Cloud Firewall blocks all
   public inbound, always. The operator administers it over the private network
-  (`root@10.250.0.3`) with the packages host as SSH jump host; authentication
+  (`root@10.250.0.3`, `root@10.250.0.4` for arm64) with the packages host as SSH
+  jump host; authentication
   is key-only.
-- Outbound: Debian mirrors (source fetch, chroot maintenance) and SFTP to the
-  packages host (`10.250.0.2`) for uploads.
+- Outbound: Debian mirrors (source fetch, chroot maintenance), HTTPS to
+  `packages.zamfono.com` (published versions, the arm64 source fetch, gate
+  containers) and SFTP to the packages host (`10.250.0.2`) for uploads.
 - The packages host never reaches back into the builder.
 
 ## Verification
@@ -142,7 +172,7 @@ The gates are the per-build bar. Repository-level verification runs the real flo
 end to end on the real hosts — a converged `changed=0` playbook run is not proof of
 correct behavior:
 
-1. A full build on the provisioned host passes all gates.
+1. A full build on each provisioned host passes all gates.
 2. The resulting upload lands on the packages host, is ingested, and the packages
    install on a fresh trixie client via `apt`.
 3. A version bump produces a `+zamfono13.N` version strictly newer than the last

@@ -46,3 +46,20 @@ def test_missing_dsc_after_dpkg_source_fails(tmp_path, monkeypatch):
     result = run_build(str(_workspace(tmp_path)))
     assert not result.success
     assert ".dsc" in result.log
+
+
+def test_follower_builds_the_downloaded_dsc_without_repacking(tmp_path, monkeypatch):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    # a follower workspace holds the downloaded .dsc and no source tree;
+    # dpkg-source must not run, so its stub fails loudly
+    _stub(bindir, "dpkg-source", "exit 1\n")
+    _stub(bindir, "pbuilder", 'echo "pbuilder args: $@"\n')
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "asterisk_1.0-1.dsc").touch()
+    result = run_build(str(workspace), "--build=any")
+    assert result.success
+    assert "--debbuildopts --build=any" in result.log
+    assert "asterisk_1.0-1.dsc" in result.log
