@@ -12,6 +12,7 @@ from orchestrator.cli import (
     _fetch_and_patch,
     _follower_retry_pending,
     _next_build,
+    _wait_until_published,
     _run_module_load_and_upgrade_gates,
     _safe_name,
     main,
@@ -159,6 +160,21 @@ class FollowerRetryPendingTests(unittest.TestCase):
             seven_hours_ago = time.time() - 7 * 3600
             os.utime(workspace, (seven_hours_ago, seven_hours_ago))
             self.assertFalse(_follower_retry_pending(workspace))
+
+
+class WaitUntilPublishedTests(unittest.TestCase):
+    V = "1:22.10.1-1+zamfono13.1"
+
+    @patch("orchestrator.cli.time.sleep")
+    def test_returns_once_the_index_lists_the_upload(self, sleep):
+        with patch("orchestrator.cli.published_binary_versions", side_effect=[[], ["older"], [self.V]]):
+            self.assertTrue(_wait_until_published("arm64", self.V))
+        self.assertEqual(sleep.call_count, 2)
+
+    @patch("orchestrator.cli.time.sleep")
+    def test_gives_up_when_the_upload_never_appears(self, _sleep):
+        with patch("orchestrator.cli.published_binary_versions", return_value=[]):
+            self.assertFalse(_wait_until_published("arm64", self.V, timeout=0))
 
 
 class FetchAndPatchTests(unittest.TestCase):

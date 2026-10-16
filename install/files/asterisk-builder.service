@@ -6,4 +6,5 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/zamfono/asterisk-builder
-ExecStart=/usr/bin/python3 -m orchestrator.cli run
+# -u: status lines reach the journal as they happen, not at exit
+ExecStart=/usr/bin/python3 -u -m orchestrator.cli run

@@ -69,7 +69,9 @@ the code and the playbook are the same on both.
    incoming directory (the upload account's forced `internal-sftp` accepts nothing
    else, and trixie's `dput` offers no sftp method). The `.changes` file is
    transferred after everything it references, because ingestion on the packages
-   host triggers on `*.changes`.
+   host triggers on `*.changes`. The run ends only once the archive's index lists
+   the uploaded version (up to 10 minutes): a refused upload fails the run instead
+   of passing silently, and the next run never reads an index that predates it.
 8. **Upload content:** the full `.changes` — binaries, source (`.dsc` + tarballs,
    so the archive can publish `deb-src`), and the `-dbgsym` packages (routed into a
    debug suite by the packages host).

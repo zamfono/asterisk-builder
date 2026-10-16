@@ -2,10 +2,9 @@
 indexes: the source version from Sources, an architecture's binary version
 from that architecture's Packages. The archive is the single source of
 truth for "what is published", so the builder keeps no local state and
-self-heals when the archive is restored from backup or rebuilt. The window
-between a finished upload and its ingest is seconds against a timer
-interval of five minutes at the shortest, so a stale read cannot
-double-build in practice."""
+self-heals when the archive is restored from backup or rebuilt. A run
+returns only once the archive lists its upload (cli._wait_until_published),
+so the next run never reads an index that predates it."""
 import email.parser
 import gzip
 import urllib.error

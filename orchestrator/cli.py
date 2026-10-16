@@ -66,6 +66,8 @@ PRIMARY_ARCH = "amd64"
 # the primary's own retry cadence — instead of a back-to-back rebuild
 # discarding the evidence minutes after the failure.
 FOLLOWER_RETRY_SECONDS = 6 * 3600
+# Ingest takes seconds; this only bounds a refused or stuck upload.
+INGEST_TIMEOUT_SECONDS = 600
 WORKSPACE_BASE = "/var/lib/zamfono/asterisk-builder/workspace"
 MANIFEST_PATH = "manifest/modules.json"
 # One line: the key id debsign signs .changes with. Host-local, never in Git.
@@ -176,6 +178,16 @@ def _follower_retry_pending(workspace: Path) -> bool:
     """True while a failed attempt's kept workspace is younger than
     FOLLOWER_RETRY_SECONDS (successful runs remove theirs)."""
     return workspace.exists() and time.time() - workspace.stat().st_mtime < FOLLOWER_RETRY_SECONDS
+
+
+def _wait_until_published(arch: str, version: str, timeout: float = INGEST_TIMEOUT_SECONDS) -> bool:
+    """True once the archive's index for `arch` lists `version`."""
+    deadline = time.monotonic() + timeout
+    while version not in published_binary_versions(arch):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(10)
+    return True
 
 
 def _cmd_check(_args) -> int:
@@ -556,6 +568,15 @@ def _cmd_run(_args) -> int:
             return 1
 
         _sign_and_upload(workspace)
+        # A run ends only once the archive serves its upload: sftp succeeds
+        # even when the packages host later refuses the .changes, and a
+        # follower's next poll (queued by its timer while this run was busy)
+        # can start the moment this one exits — reading the index before
+        # ingest finished, it would build the same version again. A refused
+        # upload keeps its workspace, like any failed attempt.
+        if not _wait_until_published(arch, zamfono_version):
+            print(f"upload of {zamfono_version} not published after {INGEST_TIMEOUT_SECONDS}s", file=sys.stderr)
+            return 1
         shutil.rmtree(workspace, ignore_errors=True)  # successful build trees are removed
         return 0
     finally:
