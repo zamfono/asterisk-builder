@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from orchestrator.gates_deps import check_cross_group_dependencies, check_unresolved_shlibs
@@ -60,6 +61,11 @@ ARCHIVE_SOURCELIST_CONTENT = (
 APT_STATE_DIR = f"{RUNTIME_DIR}/apt"
 LOCK_PATH = f"{RUNTIME_DIR}/lock"
 PRIMARY_ARCH = "amd64"
+# A follower polls every five minutes; a failed attempt's workspace is kept
+# for diagnosis and holds off the next attempt for that version this long —
+# the primary's own retry cadence — instead of a back-to-back rebuild
+# discarding the evidence minutes after the failure.
+FOLLOWER_RETRY_SECONDS = 6 * 3600
 WORKSPACE_BASE = "/var/lib/zamfono/asterisk-builder/workspace"
 MANIFEST_PATH = "manifest/modules.json"
 # One line: the key id debsign signs .changes with. Host-local, never in Git.
@@ -164,6 +170,12 @@ def _next_build(arch: str) -> "tuple[str, str | None] | None":
         return None
     print(f"published source not yet built for {arch}: {source_version} ({arch}: {latest_published})")
     return source_version, latest_published
+
+
+def _follower_retry_pending(workspace: Path) -> bool:
+    """True while a failed attempt's kept workspace is younger than
+    FOLLOWER_RETRY_SECONDS (successful runs remove theirs)."""
+    return workspace.exists() and time.time() - workspace.stat().st_mtime < FOLLOWER_RETRY_SECONDS
 
 
 def _cmd_check(_args) -> int:
@@ -505,6 +517,9 @@ def _cmd_run(_args) -> int:
             return 0
         zamfono_version, latest_published = next_build
         workspace = Path(WORKSPACE_BASE) / _safe_name(zamfono_version)
+        if not primary and _follower_retry_pending(workspace):
+            print(f"last attempt for {zamfono_version} failed; kept in {workspace}, retried 6h after it")
+            return 0
 
         if primary:
             _fetch_and_patch(workspace, strip_zamfono_suffix(zamfono_version), zamfono_version)

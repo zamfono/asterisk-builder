@@ -1,5 +1,7 @@
+import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -8,6 +10,7 @@ from orchestrator.cli import (
     _changes_referenced_files,
     _container_check,
     _fetch_and_patch,
+    _follower_retry_pending,
     _next_build,
     _run_module_load_and_upgrade_gates,
     _safe_name,
@@ -144,6 +147,18 @@ class FollowerNextBuildTests(unittest.TestCase):
 
     def test_nothing_to_build_before_the_primary_published_any_source(self, _sid):
         self.assertIsNone(self._next_build([], []))
+
+
+class FollowerRetryPendingTests(unittest.TestCase):
+    def test_holds_off_only_while_a_failed_workspace_is_recent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "candidate"
+            self.assertFalse(_follower_retry_pending(workspace))
+            workspace.mkdir()
+            self.assertTrue(_follower_retry_pending(workspace))
+            seven_hours_ago = time.time() - 7 * 3600
+            os.utime(workspace, (seven_hours_ago, seven_hours_ago))
+            self.assertFalse(_follower_retry_pending(workspace))
 
 
 class FetchAndPatchTests(unittest.TestCase):

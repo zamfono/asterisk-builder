@@ -76,9 +76,9 @@ the published one; when sid is newer, one run performs:
    the build's `.buildinfo` environment records (the reproducible-build
    evidence).
 
-An arm64 builder follows the amd64 one: once a new source version is
-published, it builds exactly that source from the archive and uploads its
-arm64 binaries.
+An arm64 builder follows the amd64 one: it polls the archive every five
+minutes and, once a new source version is published, builds exactly that
+source and uploads its arm64 binaries.
 
 The full contract lives in [`docs/specs.md`](docs/specs.md).
 
