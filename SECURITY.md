@@ -26,7 +26,8 @@ form. Please do not open a public issue for anything exploitable.
 ## Supported versions
 
 Only the newest published version receives fixes — every publish supersedes
-its predecessors, and each suite serves the newest build only.
+its predecessors. The asterisk suites serve the newest build only; the baresip
+suites keep older builds installable, but they receive no fixes.
 
 ## Verifying the archive
 

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 from orchestrator.versioncheck import (
     dpkg_compare_versions,
+    newest_first,
     should_build,
     strip_zamfono_suffix,
 )
@@ -71,6 +72,14 @@ class ShouldBuildTests(unittest.TestCase):
             result = should_build("20.8.0~dfsg-1", "20.8.0~dfsg-1+zamfono13.1")
         self.assertFalse(result)
         self.assertEqual(calls, [("20.8.0~dfsg-1", "gt", "20.8.0~dfsg-1")])
+
+
+class NewestFirstTests(unittest.TestCase):
+    def test_orders_by_dpkg_not_by_string(self):
+        self.assertEqual(
+            newest_first(["4.0.0-1+zamfono13.2", "4.1.0-1+zamfono13.1", "4.0.0-1+zamfono13.10"]),
+            ["4.1.0-1+zamfono13.1", "4.0.0-1+zamfono13.10", "4.0.0-1+zamfono13.2"],
+        )
 
 
 if __name__ == "__main__":

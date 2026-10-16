@@ -1,6 +1,6 @@
 """Reads the published versions from an archive's own
 indexes: the source version from Sources, an architecture's binary version
-from that architecture's Packages. The archive is the single source of
+from that architecture's Packages, newest first. The archive is the single source of
 truth for "what is published", so the builder keeps no local state and
 self-heals when the archive is restored from backup or rebuilt. A run
 returns only once the archive lists its upload (cli._wait_until_published),
@@ -9,6 +9,8 @@ import email.parser
 import gzip
 import urllib.error
 import urllib.request
+
+from orchestrator.versioncheck import newest_first
 
 INDEX_BASE_URL = "https://packages.zamfono.com/debian/asterisk/22/dists/trixie/main/"
 
@@ -36,7 +38,7 @@ def _index_versions(
             # a fresh archive (or a newly added architecture) has no index yet
             return []
         raise
-    return parse_sources_versions(gzip.decompress(data).decode(), package)
+    return newest_first(parse_sources_versions(gzip.decompress(data).decode(), package))
 
 
 def published_asterisk_versions() -> "list[str]":

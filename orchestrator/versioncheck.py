@@ -1,6 +1,7 @@
 """Debian version comparison always shells out to dpkg --compare-versions;
 Python never implements the comparison algorithm itself."""
 import subprocess
+from functools import cmp_to_key
 
 from orchestrator.version import ZAMFONO_SUFFIX_RE
 
@@ -8,6 +9,15 @@ from orchestrator.version import ZAMFONO_SUFFIX_RE
 def dpkg_compare_versions(v1: str, op: str, v2: str) -> bool:
     result = subprocess.run(["dpkg", "--compare-versions", v1, op, v2], check=False)
     return result.returncode == 0
+
+
+def newest_first(versions: "list[str]") -> "list[str]":
+    """An index lists versions in no promised order, and the baresip archive
+    keeps every version (reprepro Limit: 0), so callers read [0] from this."""
+    return sorted(
+        versions,
+        key=cmp_to_key(lambda a, b: 0 if a == b else -1 if dpkg_compare_versions(a, "gt", b) else 1),
+    )
 
 
 def strip_zamfono_suffix(version: str) -> str:
